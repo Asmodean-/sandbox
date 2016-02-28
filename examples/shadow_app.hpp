@@ -27,7 +27,12 @@ struct ExperimentalApp : public GLFWApp
     PreethamProceduralSky skydome;
     FlyCameraController cameraController;
     ShaderMonitor shaderMonitor;
+    Space uiSurface;
+    
     std::unique_ptr<gui::ImGuiManager> igm;
+    
+    std::shared_ptr<GLTextureView> viewA;
+    std::shared_ptr<GLTextureView> viewB;
     
     std::vector<Renderable> sceneObjects;
     std::vector<LightObject> lights;
@@ -48,6 +53,19 @@ struct ExperimentalApp : public GLFWApp
         cameraController.set_camera(&camera);
         camera.farClip = 80.f;
         camera.look_at({0, 0, +50}, {0, 0, 0});
+        
+        // Debugging views
+        uiSurface.bounds = {0, 0, (float) width, (float) height};
+        uiSurface.add_child( {{0.0000f, +10},{0, +10},{0.1667f, -10},{0.133f, +10}});
+        uiSurface.add_child( {{0.1667f, +10},{0, +10},{0.3334f, -10},{0.133f, +10}});
+        uiSurface.add_child( {{0.3334f, +10},{0, +10},{0.5009f, -10},{0.133f, +10}});
+        uiSurface.add_child( {{0.5000f, +10},{0, +10},{0.6668f, -10},{0.133f, +10}});
+        uiSurface.add_child( {{0.6668f, +10},{0, +10},{0.8335f, -10},{0.133f, +10}});
+        uiSurface.add_child( {{0.8335f, +10},{0, +10},{1.0000f, -10},{0.133f, +10}});
+        uiSurface.layout();
+        
+        //viewA.reset(new GLTextureView(tex.get_gl_handle()));
+        //viewB.reset(new GLTextureView(tex.get_gl_handle()));
         
         objectShader = make_watched_shader(shaderMonitor, "assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl");
         
@@ -141,6 +159,9 @@ struct ExperimentalApp : public GLFWApp
             
             objectShader->unbind();
         }
+        
+        //viewA->draw(uiSurface.children[0]->bounds, int2(width, height));
+        //viewB->draw(uiSurface.children[1]->bounds, int2(width, height));
         
         gl_check_error(__FILE__, __LINE__);
         
