@@ -2,6 +2,7 @@
 
 // http://developer.download.nvidia.com/presentations/2008/GDC/GDC08_SoftShadowMapping.pdf
 // https://mynameismjp.wordpress.com/2015/02/18/shadow-sample-update/
+// https://github.com/NVIDIAGameWorks/OpenGLSamples/blob/master/samples/gl4-maxwell/CascadedShadowMapping/CascadedShadowMappingRenderer.cpp
 
 // [ ] Stencil Reflections + Shadows
 // [ ] Shadow Volumes (face / edge)
@@ -38,6 +39,7 @@ struct ExperimentalApp : public GLFWApp
     std::vector<LightObject> lights;
     
     std::shared_ptr<GlShader> objectShader;
+    std::shared_ptr<GlShader> gaussianBlurShader;
     
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
@@ -68,6 +70,7 @@ struct ExperimentalApp : public GLFWApp
         //viewB.reset(new GLTextureView(tex.get_gl_handle()));
         
         objectShader = make_watched_shader(shaderMonitor, "assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl");
+        gaussianBlurShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/gaussian_blur_vert.glsl", "assets/shaders/shadow/gaussian_blur_frag.glsl");
         
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
