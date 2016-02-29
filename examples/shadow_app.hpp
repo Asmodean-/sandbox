@@ -43,6 +43,7 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> gaussianBlurShader;
     std::shared_ptr<GlShader> shadowDebugShader;
     std::shared_ptr<GlShader> shadowCascadeShader;
+    std::shared_ptr<GlShader> sceneCascadeShader;
     
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
@@ -76,6 +77,7 @@ struct ExperimentalApp : public GLFWApp
         gaussianBlurShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/gaussian_blur_vert.glsl", "assets/shaders/shadow/gaussian_blur_frag.glsl");
         shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
         shadowCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/shadowcascade_vert.glsl", "assets/shaders/shadow/shadowcascade_frag.glsl", "assets/shaders/shadow/shadowcascade_geom.glsl");
+        sceneCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/cascade_vert.glsl", "assets/shaders/shadow/cascade_frag.glsl");
         
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
