@@ -3,6 +3,7 @@
 // http://developer.download.nvidia.com/presentations/2008/GDC/GDC08_SoftShadowMapping.pdf
 // https://mynameismjp.wordpress.com/2015/02/18/shadow-sample-update/
 // https://github.com/NVIDIAGameWorks/OpenGLSamples/blob/master/samples/gl4-maxwell/CascadedShadowMapping/CascadedShadowMappingRenderer.cpp
+// https://blogs.aerys.in/jeanmarc-leroux/2015/01/21/exponential-cascaded-shadow-mapping-with-webgl/
 
 // [ ] Stencil Reflections + Shadows
 // [ ] Shadow Volumes (face / edge)
@@ -13,9 +14,9 @@
 // [ ] Percentage Closer Filtering (PCF) + poisson disk sampling (PCSS + PCF)
 // [ ] Moment Shadow Mapping [MSM]
 
-std::shared_ptr<GlShader> make_watched_shader(ShaderMonitor & mon, const std::string vertexPath, const std::string fragPath)
+std::shared_ptr<GlShader> make_watched_shader(ShaderMonitor & mon, const std::string vertexPath, const std::string fragPath, const std::string geomPath = "")
 {
-    std::shared_ptr<GlShader> shader = std::make_shared<GlShader>(read_file_text(vertexPath), read_file_text(fragPath));
+    std::shared_ptr<GlShader> shader = std::make_shared<GlShader>(read_file_text(vertexPath), read_file_text(fragPath), read_file_text(geomPath));
     mon.add_shader(shader, vertexPath, fragPath);
     return shader;
 }
@@ -41,7 +42,8 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> objectShader;
     std::shared_ptr<GlShader> gaussianBlurShader;
     std::shared_ptr<GlShader> shadowDebugShader;
-
+    std::shared_ptr<GlShader> shadowCascadeShader;
+    
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
         glfwSwapInterval(0);
@@ -73,6 +75,7 @@ struct ExperimentalApp : public GLFWApp
         objectShader = make_watched_shader(shaderMonitor, "assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl");
         gaussianBlurShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/gaussian_blur_vert.glsl", "assets/shaders/shadow/gaussian_blur_frag.glsl");
         shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
+        shadowCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/shadowcascade_vert.glsl", "assets/shaders/shadow/shadowcascade_frag.glsl", "assets/shaders/shadow/shadowcascade_geom.glsl");
         
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
