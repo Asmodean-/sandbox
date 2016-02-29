@@ -40,7 +40,8 @@ struct ExperimentalApp : public GLFWApp
     
     std::shared_ptr<GlShader> objectShader;
     std::shared_ptr<GlShader> gaussianBlurShader;
-    
+    std::shared_ptr<GlShader> shadowDebugShader;
+
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
         glfwSwapInterval(0);
@@ -71,6 +72,7 @@ struct ExperimentalApp : public GLFWApp
         
         objectShader = make_watched_shader(shaderMonitor, "assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl");
         gaussianBlurShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/gaussian_blur_vert.glsl", "assets/shaders/shadow/gaussian_blur_frag.glsl");
+        shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
         
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
