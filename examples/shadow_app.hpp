@@ -135,12 +135,11 @@ struct ShadowCascade
             auto pose = look_at_pose(splitCentroid.xyz() - lightDir * dist, splitCentroid.xyz());
             float4x4 viewMat = pose.matrix();
 
-            
             // Xform split vertices to the light view space
             float4 splitVerticesLS[8];
             for (size_t i = 0; i < 8; ++i)
             {
-                splitVerticesLS[i] = viewMat * splitVertices[i];
+                splitVerticesLS[i] = viewMat * splitVertices[i]; // ???
             }
             
             // Find the frustum bounding box in viewspace
@@ -156,11 +155,11 @@ struct ShadowCascade
             float nearOffset = 10.0f;
             float farOffset = 20.0f;
             float4x4 projMat = make_orthographic_matrix(min.x, max.x, min.y, max.y, -max.z - nearOffset, -min.z + farOffset);
-            const float4x4 offsetMat = float4x4(float4(0.5f, 0.0f, 0.0f, 0.0f), float4(0.0f, 0.5f, 0.0f, 0.0f), float4(0.0f, 0.0f, 0.5f, 0.0f), float4(0.5f, 0.5f, 0.5f, 1.0f));
+            const float4x4 offsetMat = float4x4(float4(0.5f, 0.0f, 0.0f, 0.0f), float4(0.0f, 0.5f, 0.0f, 0.0f), float4(0.0f, 0.0f, 0.5f, 0.0f), float4(0.5f, 0.5f, 0.5f, 1.0f)); // fixme
             
             viewMatrices.push_back(viewMat);
             projMatrices.push_back(projMat);
-            shadowMatrices.push_back(offsetMat * projMat * viewMat);
+            shadowMatrices.push_back(offsetMat * projMat * viewMat); // order
             splitPlanes.push_back(float2(splitNear, splitFar));
             nearPlanes.push_back(-max.z - nearOffset);
             farPlanes.push_back(-min.z + farOffset);
@@ -182,7 +181,7 @@ struct ShadowCascade
         
         // Configured for a 5x5
         filterProg->uniform("blurSize", float2(1.0f) / float2(resolution, resolution));
-        filterProg->uniform("sigma",  3.0f);
+        filterProg->uniform("sigma", 3.0f);
 
         // Horizontal
         filterProg->texture("blurSampler", 0, GL_TEXTURE_2D_ARRAY, shadowArrayColor);
@@ -210,7 +209,7 @@ struct ShadowCascade
     void create_framebuffers()
     {
         shadowArrayColor.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
-        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT24, GL_RGB, GL_FLOAT, nullptr);
+        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
         shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
         shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
         if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
