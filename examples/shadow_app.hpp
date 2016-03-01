@@ -45,6 +45,13 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> shadowCascadeShader;
     std::shared_ptr<GlShader> sceneCascadeShader;
     
+    GlTexture3D shadowArrayColor;
+    GlTexture3D shadowArrayDepth;
+    GlFramebuffer shadowArrayFramebuffer;
+    
+    GlTexture3D blurTexAttach;
+    GlFramebuffer blurFramebuffer;
+    
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
         glfwSwapInterval(0);
@@ -78,6 +85,17 @@ struct ExperimentalApp : public GLFWApp
         shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
         shadowCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/shadowcascade_vert.glsl", "assets/shaders/shadow/shadowcascade_frag.glsl", "assets/shaders/shadow/shadowcascade_geom.glsl");
         sceneCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/cascade_vert.glsl", "assets/shaders/shadow/cascade_frag.glsl");
+        
+        shadowArrayColor.load_data(width, height, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
+        shadowArrayDepth.load_data(width, height, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT24, GL_RGB, GL_FLOAT, nullptr);
+        shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
+        shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
+        if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
+        
+        blurTexAttach.load_data(width, height, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
+        blurFramebuffer.attach(GL_COLOR_ATTACHMENT0, blurTexAttach);
+        blurFramebuffer.attach(GL_COLOR_ATTACHMENT1, shadowArrayColor); // note this attach point
+        if (!blurFramebuffer.check_complete()) throw std::runtime_error("incomplete blur framebuffer");
         
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
