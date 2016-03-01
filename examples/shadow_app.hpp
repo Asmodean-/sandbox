@@ -173,7 +173,7 @@ struct ShadowCascade
         glDisable(GL_BLEND);
         glViewport(0, 0, resolution, resolution);
 
-        glClearColor(0.0f, 0.00f, 0.00f, 1.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
         filterProg->bind();
@@ -387,16 +387,35 @@ struct ExperimentalApp : public GLFWApp
             glViewport(0, 0, width, height);
             glDisable(GL_POLYGON_OFFSET_FILL);
             
-            // Debug...
-            //cascade->filter(float2(width, height));
-            
         }
+        
+        // Fixme
+        //cascade->filter(float2(width, height));
         
         {
             glClearColor(0.0f, 0.0f, 1.0f, 1.0f); // Debug blue
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
          
-            // Draw scene
+            for (const auto & model : sceneObjects)
+            {
+                shadowCascadeShader->uniform("u_modelMatrix", model.get_model());
+                shadowCascadeShader->uniform("u_viewProjMatrix", viewProj);
+                shadowCascadeShader->uniform("u_normalMatrix", Identity4x4); // FIXME
+                
+                shadowCascadeShader->uniform("u_cascadesNear", (int) cascade->nearPlanes.size(), cascade->nearPlanes);
+                shadowCascadeShader->uniform("u_cascadesFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
+                shadowCascadeShader->uniform("u_cascadesPlane", (int) cascade->splitPlanes.size(), cascade->splitPlanes);
+                shadowCascadeShader->uniform("u_cascadesMatrix", (int) cascade->shadowMatrices.size(), cascade->shadowMatrices);
+                
+                shadowCascadeShader->texture("s_shadowMap", 0, GL_TEXTURE_2D_ARRAY, cascade->shadowArrayColor); // attachment 0
+                
+                shadowCascadeShader->uniform("u_lightDirection", lightDir);
+                shadowCascadeShader->uniform("u_expC", cascade->expCascade);
+                shadowCascadeShader->uniform("u_showCascades", 1.f);
+                
+                model.draw();
+            }
+        
         }
         
         //skydome.render(viewProj, camera.get_eye_point(), camera.farClip);
@@ -405,6 +424,13 @@ struct ExperimentalApp : public GLFWApp
             ImGui::Text("Shadow Debug");
             ImGui::Separator();
             ImGui::Checkbox("Show Cascades", &showCascades);
+            // dnable/disable polygon offset
+            // dnable/disable filtering
+            // enable/disable mapping
+            // float shadow factor
+            // float split lambda
+            // camera near clip
+            // camera far clip
         }
 
         //viewA->draw(uiSurface.children[0]->bounds, int2(width, height));
