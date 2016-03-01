@@ -86,28 +86,28 @@ vec3 fresnel(vec3 specularColor, float VoH)
 
 void main() 
 {
-    // get the normal, light, position and half vector normalized
     vec3 N = normalize(v_normal);
     vec3 L = normalize(-u_lightDirection);
     vec3 V = normalize(-v_vs_position);
     vec3 H = normalize(V + L);
 
-    // Compute dot products and clamp them between 0 and 1 just to be safe
     float NoL = saturate(dot(N, L));
     float NoV = saturate(dot(N, V));
     float VoH = saturate(dot(V, H));
     float NoH = saturate(dot(N, H));
 
     // Find frustum
-    vec4 cascadeWeights = get_cascade_weights(-v_vs_position.z, 
-        vec4(u_cascadesPlane[0].x, u_cascadesPlane[1].x, u_cascadesPlane[2].x, u_cascadesPlane[3].x), 
-        vec4(u_cascadesPlane[0].y, u_cascadesPlane[1].y, u_cascadesPlane[2].y, u_cascadesPlane[3].y));
+    vec4 cascadeWeights = get_cascade_weights(
+            -v_vs_position.z, 
+            vec4(u_cascadesPlane[0].x, u_cascadesPlane[1].x, u_cascadesPlane[2].x, u_cascadesPlane[3].x), 
+            vec4(u_cascadesPlane[0].y, u_cascadesPlane[1].y, u_cascadesPlane[2].y, u_cascadesPlane[3].y)
+        );
 
     // Shadow coords
     mat4 viewProj = get_cascade_viewproj(cascadeWeights, u_cascadesMatrix);
     vec4 coord = viewProj * v_position;
 
-    // Shadow term
+    // Shadow term (ESM)
     float shadows = 1.0;
     if (coord.z > 0.0 && coord.x > 0.0 && coord.y > 0 && coord.x <= 1 && coord.y <= 1) 
     {
