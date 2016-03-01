@@ -355,16 +355,20 @@ struct ExperimentalApp : public GLFWApp
         // Render shadowmaps
 
         {
-            auto shadowFbo = cascade->shadowArrayFramebuffer;
+            auto & shadowFbo = cascade->shadowArrayFramebuffer;
             shadowFbo.bind_to_draw();
             
             glEnable(GL_CULL_FACE);
             glEnable(GL_DEPTH_TEST);
+            
             glEnable (GL_POLYGON_OFFSET_FILL);
             glPolygonOffset(2.0f, 2.0f);
             glViewport(0, 0, cascade->resolution, cascade->resolution);
             
             shadowCascadeShader->bind();
+            
+            glClearColor(1.0f, 0.0f, 0.0f, 1.0f); // Debug red
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             
             // Fixme: should batch
             for (const auto & model : sceneObjects)
@@ -378,13 +382,21 @@ struct ExperimentalApp : public GLFWApp
 
             shadowCascadeShader->unbind();
             
-            glClearColor(1.0f, 0.0f, 0.0f, 1.0f); // Debug red
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            
             // Restore state
             shadowFbo.unbind();
             glViewport(0, 0, width, height);
             glDisable(GL_POLYGON_OFFSET_FILL);
+            
+            // Debug...
+            //cascade->filter(float2(width, height));
+            
+        }
+        
+        {
+            glClearColor(0.0f, 0.0f, 1.0f, 1.0f); // Debug blue
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+         
+            // Draw scene
         }
         
         //skydome.render(viewProj, camera.get_eye_point(), camera.farClip);
