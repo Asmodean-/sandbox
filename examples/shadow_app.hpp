@@ -21,6 +21,52 @@ std::shared_ptr<GlShader> make_watched_shader(ShaderMonitor & mon, const std::st
     return shader;
 }
 
+struct Shadow
+{
+   
+    Shadow()
+    {
+        create_framebuffers();
+        update();
+    }
+    
+    void update();
+    
+    void filter();
+    
+    GlTexture3D shadowArrayColor;
+    GlTexture3D shadowArrayDepth;
+    GlFramebuffer shadowArrayFramebuffer;
+    
+    GlTexture3D blurTexAttach;
+    GlFramebuffer blurFramebuffer;
+    
+    void create_framebuffers()
+    {
+        shadowArrayColor.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
+        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT24, GL_RGB, GL_FLOAT, nullptr);
+        shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
+        shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
+        if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
+        
+        blurTexAttach.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
+        blurFramebuffer.attach(GL_COLOR_ATTACHMENT0, blurTexAttach);
+        blurFramebuffer.attach(GL_COLOR_ATTACHMENT1, shadowArrayColor); // note this attach point
+        if (!blurFramebuffer.check_complete()) throw std::runtime_error("incomplete blur framebuffer");
+    };
+    
+    std::vector<float2> splitPlanes;
+    std::vector<float4x4> viewMatrices;
+    std::vector<float4x4> projMatrices;
+    std::vector<float4x4> shadowMatrices;
+    std::vector<float> nearPlanes;
+    std::vector<float> farPlanes;
+    
+    float resolution = 1024.f; // shadowmap resolution
+    float expCascade = 120.f; // overshadowing constant
+    float splitLambda = 0.5f; // frustum split constant
+};
+
 struct ExperimentalApp : public GLFWApp
 {
     uint64_t frameCount = 0;
@@ -44,13 +90,6 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> shadowDebugShader;
     std::shared_ptr<GlShader> shadowCascadeShader;
     std::shared_ptr<GlShader> sceneCascadeShader;
-    
-    GlTexture3D shadowArrayColor;
-    GlTexture3D shadowArrayDepth;
-    GlFramebuffer shadowArrayFramebuffer;
-    
-    GlTexture3D blurTexAttach;
-    GlFramebuffer blurFramebuffer;
     
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
@@ -85,17 +124,6 @@ struct ExperimentalApp : public GLFWApp
         shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
         shadowCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/shadowcascade_vert.glsl", "assets/shaders/shadow/shadowcascade_frag.glsl", "assets/shaders/shadow/shadowcascade_geom.glsl");
         sceneCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/cascade_vert.glsl", "assets/shaders/shadow/cascade_frag.glsl");
-        
-        shadowArrayColor.load_data(width, height, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
-        shadowArrayDepth.load_data(width, height, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT24, GL_RGB, GL_FLOAT, nullptr);
-        shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
-        shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
-        if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
-        
-        blurTexAttach.load_data(width, height, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
-        blurFramebuffer.attach(GL_COLOR_ATTACHMENT0, blurTexAttach);
-        blurFramebuffer.attach(GL_COLOR_ATTACHMENT1, shadowArrayColor); // note this attach point
-        if (!blurFramebuffer.check_complete()) throw std::runtime_error("incomplete blur framebuffer");
         
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
