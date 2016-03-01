@@ -14,6 +14,11 @@
 // [ ] Percentage Closer Filtering (PCF) + poisson disk sampling (PCSS + PCF)
 // [ ] Moment Shadow Mapping [MSM]
 
+inline float mix(float a, float b, float t)
+{
+    return a * (1 - t) + b * t;
+}
+
 std::shared_ptr<GlShader> make_watched_shader(ShaderMonitor & mon, const std::string vertexPath, const std::string fragPath, const std::string geomPath = "")
 {
     std::shared_ptr<GlShader> shader = std::make_shared<GlShader>(read_file_text(vertexPath), read_file_text(fragPath), read_file_text(geomPath));
@@ -21,18 +26,48 @@ std::shared_ptr<GlShader> make_watched_shader(ShaderMonitor & mon, const std::st
     return shader;
 }
 
+
+inline std::array<float3, 4> make_near_clip_coords(GlCamera & cam, float nearClip, float aspectRatio)
+{
+    float3 viewDirection = normalize(cam.get_view_direction());
+    float3 eye = cam.get_eye_point();
+    
+    auto mU = transform_vector(cam.pose.orientation, float3(1, 0, 0));
+    auto mV = transform_vector(cam.pose.orientation, float3(0, 1, 0));
+    
+    auto coords = cam.make_frustum_coords(aspectRatio); // top, right, bottom, left
+    
+    transform_vector(cam.pose.orientation, float3(1, 0, 0));
+    
+    float3 topLeft = eye + (nearClip * viewDirection) + (coords[0] * mV) + (coords[3] * mU);
+    float3 topRight = eye + (nearClip * viewDirection) + (coords[0] * mV) + (coords[1] * mU);
+    float3 bottomLeft = eye + (nearClip * viewDirection) + (coords[2] * mV) + (coords[3] * mU);
+    float3 bottomRight = eye + (nearClip * viewDirection) + (coords[2] * mV) + (coords[1] * mU);
+    
+    return {topLeft, topRight, bottomLeft, bottomRight};
+}
+
+inline std::array<float3, 4> make_far_clip_coords(GlCamera & cam, float nearClip, float farClip, float aspectRatio)
+{
+    float3 viewDirection = normalize(cam.get_view_direction());
+    float ratio = farClip / nearClip;
+    float3 eye = cam.get_eye_point();
+    
+    auto mU = transform_vector(cam.pose.orientation, float3(1, 0, 0));
+    auto mV = transform_vector(cam.pose.orientation, float3(0, 1, 0));
+    
+    auto coords = cam.make_frustum_coords(aspectRatio); // top, right, bottom, left
+    
+    float3 topLeft = eye + (farClip * viewDirection) + (ratio * coords[0] * mV) + (ratio * coords[3] * mU);
+    float3 topRight = eye + (farClip* viewDirection) + (ratio * coords[0] * mV) + (ratio * coords[1] * mU);
+    float3 bottomLeft = eye + (farClip * viewDirection) + (ratio * coords[2] * mV) + (ratio * coords[3] * mU);
+    float3 bottomRight = eye + (farClip * viewDirection) + (ratio * coords[2] * mV) + (ratio * coords[1] * mU);
+    
+    return {topLeft, topRight, bottomLeft, bottomRight};
+}
+
 struct Shadow
 {
-   
-    Shadow()
-    {
-        create_framebuffers();
-        update();
-    }
-    
-    void update();
-    
-    void filter();
     
     GlTexture3D shadowArrayColor;
     GlTexture3D shadowArrayDepth;
@@ -40,6 +75,101 @@ struct Shadow
     
     GlTexture3D blurTexAttach;
     GlFramebuffer blurFramebuffer;
+    
+    std::vector<float4x4> viewMatrices;
+    std::vector<float4x4> projMatrices;
+    std::vector<float4x4> shadowMatrices;
+    
+    std::vector<float2> splitPlanes;
+    std::vector<float> nearPlanes;
+    std::vector<float> farPlanes;
+    
+    float resolution = 1024.f; // shadowmap resolution
+    float expCascade = 120.f; // overshadowing constant
+    float splitLambda = 0.5f; // frustum split constant
+    
+    GlShader & debugProg;
+    GlShader & filterProg;
+    
+    Shadow(GlShader & debugProg, GlShader & filterProg) : debugProg(debugProg), filterProg(filterProg)
+    {
+        create_framebuffers();
+    }
+    
+    void update(GlCamera & sceneCamera, const float3 lightDir, float aspectRatio)
+    {
+        // clear vectors
+        viewMatrices.clear();
+        projMatrices.clear();
+        shadowMatrices.clear();
+        splitPlanes.clear();
+        nearPlanes.clear();
+        farPlanes.clear();
+        
+        float near = sceneCamera.nearClip;
+        float far = sceneCamera.farClip;
+        
+        for (size_t i = 0; i < 4; ++i)
+        {
+            // Find the split planes using GPU Gem 3. Chap 10 "Practical Split Scheme".
+            float splitNear = i > 0 ? mix(near + (static_cast<float>(i) / 4.0f) * (far - near), near * pow(far / near, static_cast<float>(i) / 4.0f), splitLambda) : near;
+            float splitFar = i < 4 - 1 ? mix(near + (static_cast<float>(i + 1) / 4.0f) * (far - near), near * pow(far / near, static_cast<float>(i + 1) / 4.0f), splitLambda) : far;
+            
+            auto nc = make_near_clip_coords(sceneCamera, splitNear, aspectRatio);
+            auto fc = make_far_clip_coords(sceneCamera, splitNear, splitFar, aspectRatio);
+            
+            float4 splitVertices[8] = { float4(nc[0], 1.0f), float4(nc[1], 1.0f), float4(nc[2], 1.0f), float4(nc[3], 1.0f), float4(fc[0], 1.0f), float4(fc[1], 1.0f), float4(fc[2], 1.0f), float4(fc[3], 1.0f) };
+            
+            // find the split centroid so we can construct a view matrix
+            float4 splitCentroid = {0, 0, 0, 0};
+            for(size_t i = 0; i < 8; ++i)
+            {
+                splitCentroid += splitVertices[i];
+            }
+            splitCentroid /= 8.0f;
+            
+            // Make the view matrix
+            float dist = max(splitFar - splitNear, distance(fc[0], fc[1]));
+            auto pose = look_at_pose(splitCentroid.xyz() - lightDir * dist, splitCentroid.xyz());
+            float4x4 viewMat = pose.matrix();
+
+            
+            // Xform split vertices to the light view space
+            float4 splitVerticesLS[8];
+            for (size_t i = 0; i < 8; ++i)
+            {
+                splitVerticesLS[i] = viewMat * splitVertices[i];
+            }
+            
+            // find the frustum bounding box in viewspace
+            float4 min = splitVerticesLS[0];
+            float4 max = splitVerticesLS[0];
+            for (size_t i = 1; i < 8; ++i)
+            {
+                min = avl::min(min, splitVerticesLS[i]);
+                max = avl::max(max, splitVerticesLS[i]);
+            }
+            
+            // Ortho projection matrix with the corners
+            float nearOffset = 10.0f;
+            float farOffset = 20.0f;
+            float4x4 projMat = make_orthographic_matrix(min.x, max.x, min.y, max.y, -max.z - nearOffset, -min.z + farOffset);
+            const float4x4 offsetMat = float4x4(float4(0.5f, 0.0f, 0.0f, 0.0f), float4(0.0f, 0.5f, 0.0f, 0.0f), float4(0.0f, 0.0f, 0.5f, 0.0f), float4(0.5f, 0.5f, 0.5f, 1.0f));
+            
+            // save matrices and near/far planes
+            viewMatrices.push_back(viewMat);
+            projMatrices.push_back(projMat);
+            shadowMatrices.push_back(offsetMat * projMat * viewMat);
+            splitPlanes.push_back(float2(splitNear, splitFar));
+            nearPlanes.push_back(-max.z - nearOffset);
+            farPlanes.push_back(-min.z + farOffset);
+        }
+    }
+    
+    void filter()
+    {
+        
+    }
     
     void create_framebuffers()
     {
@@ -55,16 +185,6 @@ struct Shadow
         if (!blurFramebuffer.check_complete()) throw std::runtime_error("incomplete blur framebuffer");
     };
     
-    std::vector<float2> splitPlanes;
-    std::vector<float4x4> viewMatrices;
-    std::vector<float4x4> projMatrices;
-    std::vector<float4x4> shadowMatrices;
-    std::vector<float> nearPlanes;
-    std::vector<float> farPlanes;
-    
-    float resolution = 1024.f; // shadowmap resolution
-    float expCascade = 120.f; // overshadowing constant
-    float splitLambda = 0.5f; // frustum split constant
 };
 
 struct ExperimentalApp : public GLFWApp
