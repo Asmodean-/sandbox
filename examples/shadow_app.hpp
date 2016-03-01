@@ -279,9 +279,6 @@ struct ExperimentalApp : public GLFWApp
         uiSurface.add_child( {{0.8335f, +10},{0, +10},{1.0000f, -10},{0.133f, +10}});
         uiSurface.layout();
         
-        //viewA.reset(new GLTextureView(tex.get_gl_handle()));
-        //viewB.reset(new GLTextureView(tex.get_gl_handle()));
-        
         objectShader = make_watched_shader(shaderMonitor, "assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl");
         gaussianBlurShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/gaussian_blur_vert.glsl", "assets/shaders/shadow/gaussian_blur_frag.glsl");
         shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
@@ -289,7 +286,10 @@ struct ExperimentalApp : public GLFWApp
         sceneCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/cascade_vert.glsl", "assets/shaders/shadow/cascade_frag.glsl");
         
         cascade.reset(new ShadowCascade(shadowCascadeShader.get(), gaussianBlurShader.get()));
-                      
+        
+        viewA.reset(new GLTextureView(cascade->shadowArrayColor.get_gl_handle()));
+        viewB.reset(new GLTextureView(cascade->shadowArrayDepth.get_gl_handle()));
+        
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
         lights[0].pose.position = float3(25, 15, 0);
@@ -398,6 +398,8 @@ struct ExperimentalApp : public GLFWApp
          
             for (const auto & model : sceneObjects)
             {
+                shadowCascadeShader->bind();
+                
                 shadowCascadeShader->uniform("u_modelMatrix", model.get_model());
                 shadowCascadeShader->uniform("u_viewProjMatrix", viewProj);
                 shadowCascadeShader->uniform("u_normalMatrix", Identity4x4); // FIXME
@@ -414,6 +416,8 @@ struct ExperimentalApp : public GLFWApp
                 shadowCascadeShader->uniform("u_showCascades", 1.f);
                 
                 model.draw();
+                
+                shadowCascadeShader->unbind();
             }
         
         }
@@ -433,8 +437,8 @@ struct ExperimentalApp : public GLFWApp
             // camera far clip
         }
 
-        //viewA->draw(uiSurface.children[0]->bounds, int2(width, height));
-        //viewB->draw(uiSurface.children[1]->bounds, int2(width, height));
+        viewA->draw(uiSurface.children[0]->bounds, int2(width, height));
+        viewB->draw(uiSurface.children[1]->bounds, int2(width, height));
         
         gl_check_error(__FILE__, __LINE__);
         
