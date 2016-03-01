@@ -66,7 +66,7 @@ inline std::array<float3, 4> make_far_clip_coords(GlCamera & cam, float nearClip
     return {topLeft, topRight, bottomLeft, bottomRight};
 }
 
-struct Shadow
+struct ShadowCascade
 {
     
     GlTexture3D shadowArrayColor;
@@ -88,17 +88,19 @@ struct Shadow
     float expCascade = 120.f; // overshadowing constant
     float splitLambda = 0.5f; // frustum split constant
     
-    GlShader & debugProg;
-    GlShader & filterProg;
+    GlShader * debugProg;
+    GlShader * filterProg;
     
-    Shadow(GlShader & debugProg, GlShader & filterProg) : debugProg(debugProg), filterProg(filterProg)
+    GlMesh fullscreen_post_quad;
+    
+    ShadowCascade(GlShader * debugProg, GlShader * filterProg) : debugProg(debugProg), filterProg(filterProg)
     {
         create_framebuffers();
+        fullscreen_post_quad = make_fullscreen_quad();
     }
     
     void update(GlCamera & sceneCamera, const float3 lightDir, float aspectRatio)
     {
-        // clear vectors
         viewMatrices.clear();
         projMatrices.clear();
         shadowMatrices.clear();
@@ -120,7 +122,7 @@ struct Shadow
             
             float4 splitVertices[8] = { float4(nc[0], 1.0f), float4(nc[1], 1.0f), float4(nc[2], 1.0f), float4(nc[3], 1.0f), float4(fc[0], 1.0f), float4(fc[1], 1.0f), float4(fc[2], 1.0f), float4(fc[3], 1.0f) };
             
-            // find the split centroid so we can construct a view matrix
+            // Split centroid for the view matrix
             float4 splitCentroid = {0, 0, 0, 0};
             for(size_t i = 0; i < 8; ++i)
             {
@@ -141,7 +143,7 @@ struct Shadow
                 splitVerticesLS[i] = viewMat * splitVertices[i];
             }
             
-            // find the frustum bounding box in viewspace
+            // Find the frustum bounding box in viewspace
             float4 min = splitVerticesLS[0];
             float4 max = splitVerticesLS[0];
             for (size_t i = 1; i < 8; ++i)
@@ -156,7 +158,6 @@ struct Shadow
             float4x4 projMat = make_orthographic_matrix(min.x, max.x, min.y, max.y, -max.z - nearOffset, -min.z + farOffset);
             const float4x4 offsetMat = float4x4(float4(0.5f, 0.0f, 0.0f, 0.0f), float4(0.0f, 0.5f, 0.0f, 0.0f), float4(0.0f, 0.0f, 0.5f, 0.0f), float4(0.5f, 0.5f, 0.5f, 1.0f));
             
-            // save matrices and near/far planes
             viewMatrices.push_back(viewMat);
             projMatrices.push_back(projMat);
             shadowMatrices.push_back(offsetMat * projMat * viewMat);
@@ -166,9 +167,44 @@ struct Shadow
         }
     }
     
-    void filter()
+    void filter(float2 screen)
     {
+        blurFramebuffer.bind_to_draw();
         
+        glDisable(GL_ALPHA_TEST);
+        glDisable(GL_BLEND);
+        glViewport(0, 0, resolution, resolution);
+
+        glClearColor(0.0f, 0.00f, 0.00f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
+        filterProg->bind();
+        
+        // Configured for a 5x5
+        filterProg->uniform("blurSize", float2(1.0f) / float2(resolution, resolution));
+        filterProg->uniform("sigma",  3.0f);
+
+        // Horizontal
+        filterProg->texture("blurSampler", 0, GL_TEXTURE_2D_ARRAY, shadowArrayColor);
+        filterProg->uniform("numBlurPixelsPerSide", 2.0f);
+        filterProg->uniform("blurMultiplyVec", float2(1.0f, 0.0f));
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        fullscreen_post_quad.draw_elements();
+        
+        // Vertical
+        filterProg->texture("blurSampler", 0, GL_TEXTURE_2D_ARRAY, blurTexAttach);
+        filterProg->uniform("numBlurPixelsPerSide", 2.0f);
+        filterProg->uniform("blurMultiplyVec", float2(0.0f, 1.0f));
+        glDrawBuffer(GL_COLOR_ATTACHMENT1);
+        fullscreen_post_quad.draw_elements();
+        
+        filterProg->unbind();
+        
+        // Reset state
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        glViewport(0, 0, screen.x, screen.y);
+        
+        gl_check_error(__FILE__, __LINE__);
     }
     
     void create_framebuffers()
@@ -179,10 +215,14 @@ struct Shadow
         shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
         if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
         
+        gl_check_error(__FILE__, __LINE__);
+        
         blurTexAttach.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
         blurFramebuffer.attach(GL_COLOR_ATTACHMENT0, blurTexAttach);
         blurFramebuffer.attach(GL_COLOR_ATTACHMENT1, shadowArrayColor); // note this attach point
         if (!blurFramebuffer.check_complete()) throw std::runtime_error("incomplete blur framebuffer");
+        
+        gl_check_error(__FILE__, __LINE__);
     };
     
 };
@@ -196,6 +236,8 @@ struct ExperimentalApp : public GLFWApp
     FlyCameraController cameraController;
     ShaderMonitor shaderMonitor;
     Space uiSurface;
+    
+    std::unique_ptr<ShadowCascade> cascade;
     
     std::unique_ptr<gui::ImGuiManager> igm;
     
@@ -245,6 +287,8 @@ struct ExperimentalApp : public GLFWApp
         shadowCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/shadowcascade_vert.glsl", "assets/shaders/shadow/shadowcascade_frag.glsl", "assets/shaders/shadow/shadowcascade_geom.glsl");
         sceneCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/cascade_vert.glsl", "assets/shaders/shadow/cascade_frag.glsl");
         
+        cascade.reset(new ShadowCascade(shadowCascadeShader.get(), gaussianBlurShader.get()));
+                      
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
         lights[0].pose.position = float3(25, 15, 0);

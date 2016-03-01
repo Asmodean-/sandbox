@@ -291,6 +291,7 @@ namespace avl
         }
         
         void texture(const char * name, int unit, const GlTexture & tex) const { texture(name, unit, tex.get_gl_handle(), GL_TEXTURE_2D); }
+        void texture(const char * name, int unit, GLenum target, const GlTexture3D & tex) const { texture(name, unit, tex.get_gl_handle(), target); }
         
         void bind() { if (program > 0) enabled = true; glUseProgram(program); }
         void unbind() { enabled = false; glUseProgram(0); }
