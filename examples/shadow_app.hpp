@@ -26,7 +26,6 @@ std::shared_ptr<GlShader> make_watched_shader(ShaderMonitor & mon, const std::st
     return shader;
 }
 
-
 inline std::array<float3, 4> make_near_clip_coords(GlCamera & cam, float nearClip, float aspectRatio)
 {
     float3 viewDirection = normalize(cam.get_view_direction());
@@ -252,6 +251,9 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> shadowCascadeShader;
     std::shared_ptr<GlShader> sceneCascadeShader;
     
+    float3 lightDir = {-1.4f, -0.37f, 0.63f};
+    bool showCascades = false;
+    
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
         glfwSwapInterval(0);
@@ -327,58 +329,72 @@ struct ExperimentalApp : public GLFWApp
     
     void on_draw() override
     {
-        auto lightDir = skydome.get_light_direction();
-        auto sunDir = skydome.get_sun_direction();
-        auto sunPosition = skydome.get_sun_position();
+        //auto lightDir = skydome.get_light_direction();
+        //auto sunDir = skydome.get_sun_direction();
+        //auto sunPosition = skydome.get_sun_position();
         
         glfwMakeContextCurrent(window);
         
         if (igm) igm->begin_frame();
-        
-        glEnable(GL_CULL_FACE);
-        glEnable(GL_DEPTH_TEST);
 
         int width, height;
         glfwGetWindowSize(window, &width, &height);
         glViewport(0, 0, width, height);
      
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
 
         const auto proj = camera.get_projection_matrix((float) width / (float) height);
         const float4x4 view = camera.get_view_matrix();
         const float4x4 viewProj = mul(proj, view);
         
-        //skydome.render(viewProj, camera.get_eye_point(), camera.farClip);
+        // Recreate cascades from camera view
+        cascade->update(camera, lightDir, ((float) width / (float) height));
+        
+        // Render shadowmaps
 
         {
-            objectShader->bind();
+            auto shadowFbo = cascade->shadowArrayFramebuffer;
+            shadowFbo.bind_to_draw();
             
-            objectShader->uniform("u_viewProj", viewProj);
-            objectShader->uniform("u_eye", camera.get_eye_point());
+            glEnable(GL_CULL_FACE);
+            glEnable(GL_DEPTH_TEST);
+            glEnable (GL_POLYGON_OFFSET_FILL);
+            glPolygonOffset(2.0f, 2.0f);
+            glViewport(0, 0, cascade->resolution, cascade->resolution);
             
-            objectShader->uniform("u_emissive", float3(.10f, 0.10f, 0.10f));
-            objectShader->uniform("u_diffuse", float3(0.4f, 0.4f, 0.4f));
+            shadowCascadeShader->bind();
             
-            for (int i = 0; i < lights.size(); i++)
-            {
-                auto light = lights[i];
-                
-                objectShader->uniform("u_lights[" + std::to_string(i) + "].position", light.pose.position);
-                objectShader->uniform("u_lights[" + std::to_string(i) + "].color", light.color);
-            }
-            
+            // Fixme: should batch
             for (const auto & model : sceneObjects)
             {
-                objectShader->uniform("u_modelMatrix", model.get_model());
-                objectShader->uniform("u_modelMatrixIT", inv(transpose(model.get_model())));
-                objectShader->uniform("u_diffuse", float3(0.7f, 0.3f, 0.3f));
+                shadowCascadeShader->uniform("u_cascadeNear", (int) cascade->nearPlanes.size(), cascade->nearPlanes);
+                shadowCascadeShader->uniform("u_cascadeFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
+                shadowCascadeShader->uniform("u_cascadeViewMatrixArray", (int) cascade->viewMatrices.size(), cascade->viewMatrices);
+                shadowCascadeShader->uniform("u_cascadeProjMatrixArray", (int) cascade->projMatrices.size(), cascade->projMatrices);
                 model.draw();
             }
+
+            shadowCascadeShader->unbind();
             
-            objectShader->unbind();
+            glClearColor(1.0f, 0.0f, 0.0f, 1.0f); // Debug red
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            
+            // Restore state
+            shadowFbo.unbind();
+            glViewport(0, 0, width, height);
+            glDisable(GL_POLYGON_OFFSET_FILL);
         }
         
+        //skydome.render(viewProj, camera.get_eye_point(), camera.farClip);
+        
+        {
+            ImGui::Text("Shadow Debug");
+            ImGui::Separator();
+            ImGui::Checkbox("Show Cascades", &showCascades);
+        }
+
         //viewA->draw(uiSurface.children[0]->bounds, int2(width, height));
         //viewB->draw(uiSurface.children[1]->bounds, int2(width, height));
         
