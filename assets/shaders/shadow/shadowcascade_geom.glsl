@@ -1,7 +1,7 @@
 #version 330
 #extension GL_ARB_gpu_shader5: require
 
-layout(triangles) in;
+layout(triangles, invocations = 4) in; // one for each cascade
 layout(triangle_strip, max_vertices = 3) out;
 
 uniform mat4 u_cascadeViewMatrixArray[4];

@@ -191,11 +191,11 @@ struct ShadowCascade
             float nearOffset = 10.0f;
             float farOffset = 20.0f;
             float4x4 projMat = make_orthographic_matrix(min.x, max.x, min.y, max.y, -max.z - nearOffset, -min.z + farOffset);
-            const float4x4 offsetMat = float4x4(float4(0.5f, 0.0f, 0.0f, 0.0f), float4(0.0f, 0.5f, 0.0f, 0.0f), float4(0.0f, 0.0f, 0.5f, 0.0f), float4(0.5f, 0.5f, 0.5f, 1.0f)); // fixme
+            const float4x4 shadowBias = {{0.5f,0,0,0}, {0,0.5f,0,0}, {0,0,0.5f,0}, {0.5f,0.5f,0.5f,1}};
             
             viewMatrices.push_back(viewMat);
             projMatrices.push_back(projMat);
-            shadowMatrices.push_back(offsetMat * projMat * viewMat); // order
+            shadowMatrices.push_back(shadowBias * projMat * viewMat);
             splitPlanes.push_back(float2(splitNear, splitFar));
             nearPlanes.push_back(-max.z - nearOffset);
             farPlanes.push_back(-min.z + farOffset);
@@ -268,8 +268,9 @@ struct ShadowCascade
 
 struct ExperimentalApp : public GLFWApp
 {
-    uint64_t frameCount = 0;
-
+    std::random_device rd;
+    std::mt19937 gen;
+    
     GlCamera camera;
     PreethamProceduralSky skydome;
     FlyCameraController cameraController;
@@ -294,6 +295,8 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> shadowCascadeShader;
     std::shared_ptr<GlShader> sceneCascadeShader;
     
+    Renderable floor;
+    
     float3 lightDir;
     bool showCascades = false;
     bool polygonOffset = false;
@@ -301,6 +304,8 @@ struct ExperimentalApp : public GLFWApp
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
         glfwSwapInterval(0);
+        
+        gen = std::mt19937(rd());
         
         igm.reset(new gui::ImGuiManager(window));
         gui::make_dark_theme();
@@ -347,17 +352,28 @@ struct ExperimentalApp : public GLFWApp
         
         auto hollowCube = load_geometry_from_ply("assets/models/geometry/CubeUniform.ply");
         for (auto & v : hollowCube.vertices) v *= 0.20f;
-        sceneObjects.push_back(Renderable(hollowCube));
-        sceneObjects.back().pose.position = float3(0, -5, 0);
-        sceneObjects.back().scale = float3(8, 8.f, 0.0001f);
-        sceneObjects.back().pose.orientation = make_rotation_quat_around_x(ANVIL_PI / 2);
+        //sceneObjects.push_back(Renderable(hollowCube));
+        //sceneObjects.back().pose.position = float3(0, -5, 0);
+        //sceneObjects.back().scale = float3(8, 8.f, 0.0001f);
+        //sceneObjects.back().pose.orientation = make_rotation_quat_around_x(ANVIL_PI / 2);
         
-        auto torusKnot = load_geometry_from_ply("assets/models/geometry/HexagonUniform.ply");
-        for (auto & v : torusKnot.vertices) v *= 0.05f;
-        sceneObjects.push_back(Renderable(torusKnot));
-        sceneObjects.back().pose.position = float3(0, 0, 0);
+        auto randomGeo = load_geometry_from_ply("assets/models/geometry/SphereUniform.ply");
+        for (auto & v : randomGeo.vertices) v *= 0.0075f;
+        
+        auto r = std::uniform_real_distribution<float>(-32.0, 32.0);
+        
+        for (int i = 0; i < 64; ++i)
+        {
+            auto newObject = Renderable(randomGeo);
+            newObject.pose.position = float3(r(gen), 0, r(gen));
+            sceneObjects.push_back(std::move(newObject));
+        }
+
+        //sceneObjects.back().pose.position = float3(0, 0, 0);
         
         lightDir = normalize(float3( -1.4f, -0.37f, 0.63f ));
+        
+        floor = Renderable(make_plane(112.f, 112.f, 256, 256));
         
         gl_check_error(__FILE__, __LINE__);
     }
@@ -399,7 +415,7 @@ struct ExperimentalApp : public GLFWApp
         // model view proj is proj * view * model
         
         // Recreate cascades from camera view
-        cascade->update(camera, lightDir, ((float) width / (float) height));
+        cascade->update(camera, lightDir, 1.f ); // aspect ratio?
         
         // Render shadowmaps
 
@@ -407,31 +423,29 @@ struct ExperimentalApp : public GLFWApp
             auto & shadowFbo = cascade->shadowArrayFramebuffer;
             shadowFbo.bind_to_draw();
             
-            //glEnable(GL_CULL_FACE); glCullFace(GL_BACK);
-            glEnable(GL_DEPTH_TEST);
-            glDepthMask(GL_TRUE);
+            glEnable(GL_CULL_FACE);
+            //glCullFace(GL_FRONT);
+            
+            glEnable(GL_DEPTH_TEST); glDepthMask(GL_TRUE);
             
             glDisable(GL_BLEND);
             
             //if (polygonOffset) glEnable(GL_POLYGON_OFFSET_FILL);
-            
             glPolygonOffset(2.0f, 2.0f);
-            //glViewport(0, 0, cascade->resolution, cascade->resolution);
             
+            glViewport(0, 0, cascade->resolution, cascade->resolution);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             
             shadowCascadeShader->bind();
             
-            //glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Debug red
-            //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            shadowCascadeShader->uniform("u_cascadeNear", (int) cascade->nearPlanes.size(), cascade->nearPlanes);
+            shadowCascadeShader->uniform("u_cascadeFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
+            shadowCascadeShader->uniform("u_cascadeViewMatrixArray", (int) cascade->viewMatrices.size(), cascade->viewMatrices);
+            shadowCascadeShader->uniform("u_cascadeProjMatrixArray", (int) cascade->projMatrices.size(), cascade->projMatrices);
             
             // Fixme: should batch
             for (const auto & model : sceneObjects)
             {
-                shadowCascadeShader->uniform("u_cascadeNear", (int) cascade->nearPlanes.size(), cascade->nearPlanes);
-                shadowCascadeShader->uniform("u_cascadeFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
-                shadowCascadeShader->uniform("u_cascadeViewMatrixArray", (int) cascade->viewMatrices.size(), cascade->viewMatrices);
-                shadowCascadeShader->uniform("u_cascadeProjMatrixArray", (int) cascade->projMatrices.size(), cascade->projMatrices);
                 model.draw();
             }
 
@@ -442,67 +456,69 @@ struct ExperimentalApp : public GLFWApp
             glViewport(0, 0, width, height);
             //if (polygonOffset) glDisable(GL_POLYGON_OFFSET_FILL);
             
-            //glDisable(GL_CULL_FACE);
+            //glCullFace(GL_BACK);
             gl_check_error(__FILE__, __LINE__);
         }
         
         // Fixme
         //cascade->filter(float2(width, height));
         
-        glClearColor(1.0f, 0.1f, 0.1f, 1.0f);
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
         {
+            // View space light dir
+            float3 sceneLightDir = transform_vector(camera.get_view_matrix(), lightDir);
             
+            sceneCascadeShader->bind();
+            
+            sceneCascadeShader->uniform("u_cascadesNear", (int) cascade->nearPlanes.size(), cascade->nearPlanes);
+            sceneCascadeShader->uniform("u_cascadesFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
+            sceneCascadeShader->uniform("u_cascadesPlane", (int) cascade->splitPlanes.size(), cascade->splitPlanes);
+            sceneCascadeShader->uniform("u_cascadesMatrix", (int) cascade->shadowMatrices.size(), cascade->shadowMatrices);
+            sceneCascadeShader->texture("s_shadowMap", 0, GL_TEXTURE_2D_ARRAY, cascade->shadowArrayColor); // attachment 0
+            sceneCascadeShader->uniform("u_lightDirection", sceneLightDir);
+            sceneCascadeShader->uniform("u_expC", cascade->expCascade);
+            sceneCascadeShader->uniform("u_showCascades", (float) showCascades);
+            
+            sceneCascadeShader->uniform("u_viewProjMatrix", viewProj);
+            sceneCascadeShader->uniform("u_projMatrix", proj);
+            
+             // Todo - frustum intersection
             for (const auto & model : sceneObjects)
             {
-                // Frustum intersection
-                
-                float3 sceneLightDir = transform_vector(camera.get_view_matrix(), lightDir);
-                
-                sceneCascadeShader->bind();
-                
                 sceneCascadeShader->uniform("u_modelMatrix", model.get_model());
                 sceneCascadeShader->uniform("u_modelMatrixIT", inv(transpose(model.get_model())));
-                sceneCascadeShader->uniform("u_viewProjMatrix", viewProj);
                 sceneCascadeShader->uniform("u_modelViewMatrix", view * model.get_model());
-                sceneCascadeShader->uniform("u_projMatrix", proj);
-                
-                
-                sceneCascadeShader->uniform("u_normalMatrix", get_rotation_submatrix(Identity4x4)); // FIXME
-                
-                sceneCascadeShader->uniform("u_cascadesNear", (int) cascade->nearPlanes.size(), cascade->nearPlanes);
-                sceneCascadeShader->uniform("u_cascadesFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
-                sceneCascadeShader->uniform("u_cascadesPlane", (int) cascade->splitPlanes.size(), cascade->splitPlanes);
-                sceneCascadeShader->uniform("u_cascadesMatrix", (int) cascade->shadowMatrices.size(), cascade->shadowMatrices);
-                
-                sceneCascadeShader->texture("s_shadowMap", 0, GL_TEXTURE_2D_ARRAY, cascade->shadowArrayColor); // attachment 0
-                
-                sceneCascadeShader->uniform("u_lightDirection", sceneLightDir);
-                sceneCascadeShader->uniform("u_expC", cascade->expCascade);
-                sceneCascadeShader->uniform("u_showCascades", (float) showCascades);
-                
+                sceneCascadeShader->uniform("u_normalMatrix",  get_rotation_submatrix(inv(transpose(view * model.get_model()))));
                 model.draw();
-                
-                sceneCascadeShader->unbind();
+            }
+            
+            {
+                float4x4 model = make_translation_matrix({0, -10, 0}) * make_rotation_matrix({1, 0, 0}, -ANVIL_PI / 2) ;
+                sceneCascadeShader->uniform("u_modelMatrix", model);
+                sceneCascadeShader->uniform("u_modelMatrixIT", inv(transpose(model)));
+                sceneCascadeShader->uniform("u_modelViewMatrix", view * model);
+                 sceneCascadeShader->uniform("u_normalMatrix", get_rotation_submatrix(inv(transpose(view * model))));
+                floor.draw();
             }
             
             //glDisable(GL_DEPTH_TEST);
             //glDepthMask(GL_FALSE);
-        
+            
+            sceneCascadeShader->unbind();
         }
         
         //skydome.render(viewProj, camera.get_eye_point(), camera.farClip);
         
         {
             ImGui::Checkbox("Show Cascades", &showCascades);
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Checkbox("Use Polygon Offset", &polygonOffset);
             ImGui::SliderFloat("Shadow Factor", &cascade->expCascade, 0.f, 1000.f);
-            ImGui::Checkbox("Polygon Offset", &polygonOffset);
-            // dnable/disable polygon offset
+            ImGui::DragFloat3("Light Direction", &lightDir[0], 0.1f, -1.0f, 1.0f);
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             // dnable/disable filtering
             // enable/disable mapping
-            // float shadow factor
             // float split lambda
             // camera near clip
             // camera far clip

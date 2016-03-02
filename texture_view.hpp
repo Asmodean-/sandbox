@@ -51,10 +51,10 @@ in vec2 v_texcoord;
 out vec4 f_color;
 void main()
 {
-    f_color = texture(u_texture, vec3(v_texcoord, float(u_slice)));
+    vec4 sample = texture(u_texture, vec3(v_texcoord, float(u_slice)));
+    f_color = vec4(sample.r, sample.r, sample.r, 1.0); // temp hack for debugging
 }
 )";
-
 
 namespace avl
 {

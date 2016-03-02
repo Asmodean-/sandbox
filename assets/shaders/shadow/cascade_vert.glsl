@@ -9,6 +9,7 @@ uniform mat4 u_modelMatrixIT;
 uniform mat4 u_viewProjMatrix;
 uniform mat4 u_modelViewMatrix;
 uniform mat4 u_projMatrix;
+uniform mat3 u_normalMatrix;
 
 out vec4 v_position;
 out vec3 v_normal;
@@ -25,7 +26,7 @@ void main()
     //gl_Position = u_viewProjMatrix * vec4(worldPosition, 1.0); 
     vec4 worldPosition = (u_modelViewMatrix * vec4(inPosition, 1.0));
     v_position = worldPosition;
-    v_normal = normalize((u_modelMatrixIT * vec4(inNormal,0)).xyz);
+    v_normal = normalize(u_normalMatrix * inNormal); //normalize((u_modelMatrixIT * vec4(inNormal,0)).xyz);
     v_vs_position = worldPosition.xyz;
     gl_Position = u_projMatrix * worldPosition; 
 } 

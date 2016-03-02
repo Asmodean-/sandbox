@@ -12,5 +12,5 @@ void main()
 {
     int layer = int(g_layer);
     float linearDepth = (-vs_position.z - u_cascadeNear[layer] ) / ( u_cascadeFar[layer] - u_cascadeNear[layer]);
-    f_depth = (linearDepth);
+    f_depth = linearDepth;
 }
