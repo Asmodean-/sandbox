@@ -14,6 +14,34 @@
 // [ ] Percentage Closer Filtering (PCF) + poisson disk sampling (PCSS + PCF)
 // [ ] Moment Shadow Mapping [MSM]
 
+constexpr const char colorVertexShader[] = R"(#version 330
+layout(location = 0) in vec3 vertex;
+layout(location = 1) in vec3 vnorm;
+uniform mat4 u_modelMatrix;
+uniform mat4 u_modelMatrixIT;
+uniform mat4 u_viewProj;
+uniform vec3 u_color;
+out vec3 color;
+out vec3 normal;
+void main()
+{
+    vec4 worldPos = u_modelMatrix * vec4(vertex, 1);
+    gl_Position = u_viewProj * worldPos;
+    color = u_color * 0.80;
+    normal = normalize((u_modelMatrixIT * vec4(vnorm,0)).xyz);
+}
+)";
+
+constexpr const char colorFragmentShader[] = R"(#version 330
+in vec3 color;
+out vec4 f_color;
+in vec3 normal;
+void main()
+{
+    f_color = (vec4(color.rgb, 1) * 0.75)+ (dot(normal, vec3(0, 1, 0)) * 0.33);
+}
+)";
+
 inline float mix(float a, float b, float t)
 {
     return a * (1 - t) + b * t;
@@ -294,6 +322,8 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> shadowCascadeShader;
     std::shared_ptr<GlShader> sceneCascadeShader;
     
+    std::shared_ptr<GlShader> colorShader;
+    
     Renderable floor;
     Renderable lightFrustum;
     
@@ -327,6 +357,8 @@ struct ExperimentalApp : public GLFWApp
         uiSurface.add_child( {{0.6668f, +10},{0, +10},{0.8335f, -10},{0.133f, +10}});
         uiSurface.add_child( {{0.8335f, +10},{0, +10},{1.0000f, -10},{0.133f, +10}});
         uiSurface.layout();
+        
+        colorShader.reset(new GlShader(colorVertexShader, colorFragmentShader));
         
         shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
         
@@ -498,21 +530,25 @@ struct ExperimentalApp : public GLFWApp
                 sceneCascadeShader->uniform("u_normalMatrix", get_rotation_submatrix(inv(transpose(view * model))));
                 floor.draw();
             }
-            
-            {
-                auto pose = look_at_pose({0, 0, 0}, lightDir);
-                auto model = make_view_matrix_from_pose(pose);
-                sceneCascadeShader->uniform("u_modelMatrix", model);
-                sceneCascadeShader->uniform("u_modelMatrixIT", inv(transpose(model)));
-                sceneCascadeShader->uniform("u_modelViewMatrix", view * model);
-                sceneCascadeShader->uniform("u_normalMatrix", get_rotation_submatrix(inv(transpose(view * model))));
-                lightFrustum.draw();
-            }
-            
+
             //glDisable(GL_DEPTH_TEST);
             //glDepthMask(GL_FALSE);
             
             sceneCascadeShader->unbind();
+        }
+
+        {
+            colorShader->bind();
+            
+            auto pose = look_at_pose({0, 0, 0}, lightDir);
+            auto model = make_view_matrix_from_pose(pose);
+            colorShader->uniform("u_modelMatrix", model);
+            colorShader->uniform("u_modelMatrixIT", inv(transpose(model)));
+            colorShader->uniform("u_viewProj", viewProj);
+            colorShader->uniform("u_color", float3(1, 0, 0));
+            
+            lightFrustum.draw();
+            colorShader->unbind();
         }
         
         //skydome.render(viewProj, camera.get_eye_point(), camera.farClip);
