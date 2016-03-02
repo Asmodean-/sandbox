@@ -37,13 +37,15 @@ namespace avl
         Renderable(const Geometry & g) : geom(g)
         {
             rebuild_mesh();
-            //mesh.set_non_indexed(GL_LINES);
+            //;
             //glPointSize(8);
         }
         
         void rebuild_mesh() { bounds = geom.compute_bounds(); mesh = make_mesh_from_geometry(geom); }
         
-        void draw() const { mesh.draw_elements(); };
+        void set_non_indexed(GLenum mode) { mesh.set_non_indexed(mode); };
+        
+        void draw() const {  mesh.draw_elements(); };
         
         RaycastResult check_hit(const Ray & worldRay) const
         {

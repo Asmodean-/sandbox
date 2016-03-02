@@ -203,7 +203,7 @@ struct ShadowCascade
             //std::cout << float2(splitNear, splitFar) << std::endl;
             //std::cout << offsetMat * projMat * viewMat << std::endl;
         }
-        std::cout << "--------------- \n";
+        
     }
     
     void filter(float2 screen)
@@ -287,7 +287,6 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GLTextureView3D> viewD;
     
     std::vector<Renderable> sceneObjects;
-    std::vector<LightObject> lights;
     
     std::shared_ptr<GlShader> objectShader;
     std::shared_ptr<GlShader> gaussianBlurShader;
@@ -296,6 +295,7 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> sceneCascadeShader;
     
     Renderable floor;
+    Renderable lightFrustum;
     
     float3 lightDir;
     bool showCascades = false;
@@ -344,12 +344,6 @@ struct ExperimentalApp : public GLFWApp
         viewC.reset(new GLTextureView3D(cascade->shadowArrayColor.get_gl_handle()));
         viewD.reset(new GLTextureView3D(cascade->shadowArrayColor.get_gl_handle()));
         
-        lights.resize(2);
-        lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
-        lights[0].pose.position = float3(25, 15, 0);
-        lights[1].color = float3(255.f / 255.f, 242.f / 255.f, 254.f / 255.f);
-        lights[1].pose.position = float3(-25, 15, 0);
-        
         auto hollowCube = load_geometry_from_ply("assets/models/geometry/CubeUniform.ply");
         for (auto & v : hollowCube.vertices) v *= 0.20f;
         //sceneObjects.push_back(Renderable(hollowCube));
@@ -374,6 +368,8 @@ struct ExperimentalApp : public GLFWApp
         lightDir = normalize(float3( -1.4f, -0.37f, 0.63f ));
         
         floor = Renderable(make_plane(112.f, 112.f, 256, 256));
+        lightFrustum = Renderable(make_frustum());
+        lightFrustum.set_non_indexed(GL_LINES);
         
         gl_check_error(__FILE__, __LINE__);
     }
@@ -499,8 +495,18 @@ struct ExperimentalApp : public GLFWApp
                 sceneCascadeShader->uniform("u_modelMatrix", model);
                 sceneCascadeShader->uniform("u_modelMatrixIT", inv(transpose(model)));
                 sceneCascadeShader->uniform("u_modelViewMatrix", view * model);
-                 sceneCascadeShader->uniform("u_normalMatrix", get_rotation_submatrix(inv(transpose(view * model))));
+                sceneCascadeShader->uniform("u_normalMatrix", get_rotation_submatrix(inv(transpose(view * model))));
                 floor.draw();
+            }
+            
+            {
+                auto pose = look_at_pose({0, 0, 0}, lightDir);
+                auto model = make_view_matrix_from_pose(pose);
+                sceneCascadeShader->uniform("u_modelMatrix", model);
+                sceneCascadeShader->uniform("u_modelMatrixIT", inv(transpose(model)));
+                sceneCascadeShader->uniform("u_modelViewMatrix", view * model);
+                sceneCascadeShader->uniform("u_normalMatrix", get_rotation_submatrix(inv(transpose(view * model))));
+                lightFrustum.draw();
             }
             
             //glDisable(GL_DEPTH_TEST);
