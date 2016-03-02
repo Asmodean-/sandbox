@@ -13,7 +13,7 @@ namespace avl
     {
         Pose pose;
         
-        float fov = 60.0f;
+        float fov = 65.0f;
         float nearClip = 0.1f;
         float farClip = 70.0f;
         

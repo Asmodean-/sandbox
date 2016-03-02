@@ -26,44 +26,68 @@ std::shared_ptr<GlShader> make_watched_shader(ShaderMonitor & mon, const std::st
     return shader;
 }
 
-inline std::array<float3, 4> make_near_clip_coords(GlCamera & cam, float nearClip, float aspectRatio)
+// http://gamedev.stackexchange.com/questions/71058/how-extract-frustum-planes-from-clip-coordinates
+
+inline std::array<float3, 4> make_near_clip_coords(GlCamera & cam, float aspectRatio)
 {
     float3 viewDirection = normalize(cam.get_view_direction());
     float3 eye = cam.get_eye_point();
     
-    auto mU = transform_vector(cam.pose.orientation, float3(1, 0, 0));
-    auto mV = transform_vector(cam.pose.orientation, float3(0, 1, 0));
+    auto m = cam.get_view_matrix();
+    auto leftDir = m.getRow(0).xyz(); // Camera side direction
+    auto upDir = m.getRow(1).xyz(); // Camera up direction
     
-    auto coords = cam.make_frustum_coords(aspectRatio); // top, right, bottom, left
+    auto coords = cam.make_frustum_coords(aspectRatio);
     
-    transform_vector(cam.pose.orientation, float3(1, 0, 0));
+    float frustumTop	= coords[0];
+    float frustumRight	= coords[1];
+    float frustumBottom	= coords[2];
+    float frustumLeft	= coords[3];
     
-    float3 topLeft = eye + (nearClip * viewDirection) + (coords[0] * mV) + (coords[3] * mU);
-    float3 topRight = eye + (nearClip * viewDirection) + (coords[0] * mV) + (coords[1] * mU);
-    float3 bottomLeft = eye + (nearClip * viewDirection) + (coords[2] * mV) + (coords[3] * mU);
-    float3 bottomRight = eye + (nearClip * viewDirection) + (coords[2] * mV) + (coords[1] * mU);
+    float3 topLeft = eye + (cam.nearClip * viewDirection) + (frustumTop * upDir) + (frustumLeft * leftDir);
+    float3 topRight = eye + (cam.nearClip  * viewDirection) + (frustumTop * upDir) + (frustumRight * leftDir);
+    float3 bottomLeft = eye + (cam.nearClip  * viewDirection) + (frustumBottom * upDir) + (frustumLeft * leftDir);
+    float3 bottomRight = eye + (cam.nearClip  * viewDirection) + (frustumBottom * upDir) + (frustumRight * leftDir);
     
     return {topLeft, topRight, bottomLeft, bottomRight};
 }
 
-inline std::array<float3, 4> make_far_clip_coords(GlCamera & cam, float nearClip, float farClip, float aspectRatio)
+inline std::array<float3, 4> make_far_clip_coords(GlCamera & cam, float aspectRatio)
 {
     float3 viewDirection = normalize(cam.get_view_direction());
-    float ratio = farClip / nearClip;
+    float ratio = cam.farClip / cam.nearClip;
     float3 eye = cam.get_eye_point();
     
-    auto mU = transform_vector(cam.pose.orientation, float3(1, 0, 0));
-    auto mV = transform_vector(cam.pose.orientation, float3(0, 1, 0));
+    auto m = cam.get_view_matrix();
+    auto leftDir = m.getRow(0).xyz(); // Camera side direction
+    auto upDir = m.getRow(1).xyz(); // Camera up direction
     
-    auto coords = cam.make_frustum_coords(aspectRatio); // top, right, bottom, left
+    auto coords = cam.make_frustum_coords(aspectRatio);
     
-    float3 topLeft = eye + (farClip * viewDirection) + (ratio * coords[0] * mV) + (ratio * coords[3] * mU);
-    float3 topRight = eye + (farClip* viewDirection) + (ratio * coords[0] * mV) + (ratio * coords[1] * mU);
-    float3 bottomLeft = eye + (farClip * viewDirection) + (ratio * coords[2] * mV) + (ratio * coords[3] * mU);
-    float3 bottomRight = eye + (farClip * viewDirection) + (ratio * coords[2] * mV) + (ratio * coords[1] * mU);
+    float frustumTop	= coords[0];
+    float frustumRight	= coords[1];
+    float frustumBottom	= coords[2];
+    float frustumLeft	= coords[3];
+    
+    float3 topLeft = eye + (cam.farClip * viewDirection) + (ratio * frustumTop * upDir) + (ratio * frustumLeft * leftDir);
+    float3 topRight = eye + (cam.farClip * viewDirection) + (ratio * frustumTop * upDir) + (ratio * frustumRight * leftDir);
+    float3 bottomLeft = eye + (cam.farClip * viewDirection) + (ratio * frustumBottom * upDir) + (ratio * frustumLeft * leftDir);
+    float3 bottomRight = eye + (cam.farClip * viewDirection) + (ratio * frustumBottom * upDir) + (ratio * frustumRight * leftDir);
     
     return {topLeft, topRight, bottomLeft, bottomRight};
 }
+
+/*
+struct Frustum
+{
+    Frustum()
+    {
+        for (int i = 0; i < 6; ++i) planes.push_back(Plane());
+    }
+    
+    std::vector<Plane> planes;
+};
+*/
 
 struct ShadowCascade
 {
@@ -113,37 +137,50 @@ struct ShadowCascade
         for (size_t i = 0; i < 4; ++i)
         {
             // Find the split planes using GPU Gem 3. Chap 10 "Practical Split Scheme".
+            // http://http.developer.nvidia.com/GPUGems3/gpugems3_ch10.html
             float splitNear = i > 0 ? mix(near + (static_cast<float>(i) / 4.0f) * (far - near), near * pow(far / near, static_cast<float>(i) / 4.0f), splitLambda) : near;
             float splitFar = i < 4 - 1 ? mix(near + (static_cast<float>(i + 1) / 4.0f) * (far - near), near * pow(far / near, static_cast<float>(i + 1) / 4.0f), splitLambda) : far;
+
+            GlCamera myCam = sceneCamera;
+            myCam.nearClip = splitNear;
+            myCam.farClip = splitFar;
             
-            auto nc = make_near_clip_coords(sceneCamera, splitNear, aspectRatio);
-            auto fc = make_far_clip_coords(sceneCamera, splitNear, splitFar, aspectRatio);
+            auto nc = make_near_clip_coords(myCam, aspectRatio);
+            auto fc = make_far_clip_coords(myCam, aspectRatio);
             
-            float4 splitVertices[8] = { float4(nc[0], 1.0f), float4(nc[1], 1.0f), float4(nc[2], 1.0f), float4(nc[3], 1.0f), float4(fc[0], 1.0f), float4(fc[1], 1.0f), float4(fc[2], 1.0f), float4(fc[3], 1.0f) };
+            float3 splitVertices[8] = { nc[0], nc[1], nc[2], nc[3], fc[0], fc[1], fc[2], fc[3]};
             
             // Split centroid for the view matrix
-            float4 splitCentroid = {0, 0, 0, 0};
+            float3 splitCentroid = {0, 0, 0};
             for(size_t i = 0; i < 8; ++i)
             {
                 splitCentroid += splitVertices[i];
             }
             splitCentroid /= 8.0f;
             
+            //std::cout << splitCentroid << std::endl;
+            
             // Make the view matrix
             float dist = max(splitFar - splitNear, distance(fc[0], fc[1]));
-            auto pose = look_at_pose(splitCentroid.xyz() - lightDir * dist, splitCentroid.xyz());
-            float4x4 viewMat = pose.matrix();
+            //auto pose = look_at_pose(splitCentroid.xyz() - lightDir * dist, splitCentroid.xyz());
+            //float4x4 viewMat = pose.matrix();
+            
+            //td::cout << pose.position << std::endl;
+            myCam.look_at(splitCentroid - lightDir * dist, splitCentroid);
+            auto viewMat = myCam.get_view_matrix();// make_view_matrix_from_pose(pose);
+            
+            //std::cout << viewMat << std::endl;
 
             // Xform split vertices to the light view space
-            float4 splitVerticesLS[8];
+            float3 splitVerticesLS[8];
             for (size_t i = 0; i < 8; ++i)
             {
-                splitVerticesLS[i] = viewMat * splitVertices[i]; // ???
+                splitVerticesLS[i] = transform_coord(viewMat, splitVertices[i]);
             }
             
             // Find the frustum bounding box in viewspace
-            float4 min = splitVerticesLS[0];
-            float4 max = splitVerticesLS[0];
+            float3 min = splitVerticesLS[0];
+            float3 max = splitVerticesLS[0];
             for (size_t i = 1; i < 8; ++i)
             {
                 min = avl::min(min, splitVerticesLS[i]);
@@ -162,7 +199,11 @@ struct ShadowCascade
             splitPlanes.push_back(float2(splitNear, splitFar));
             nearPlanes.push_back(-max.z - nearOffset);
             farPlanes.push_back(-min.z + farOffset);
+            
+            //std::cout << float2(splitNear, splitFar) << std::endl;
+            //std::cout << offsetMat * projMat * viewMat << std::endl;
         }
+        std::cout << "--------------- \n";
     }
     
     void filter(float2 screen)
@@ -208,7 +249,7 @@ struct ShadowCascade
     void create_framebuffers()
     {
         shadowArrayColor.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
-        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, nullptr);
         shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
         shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
         if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
@@ -239,8 +280,10 @@ struct ExperimentalApp : public GLFWApp
     
     std::unique_ptr<gui::ImGuiManager> igm;
     
-    std::shared_ptr<GLTextureView> viewA;
-    std::shared_ptr<GLTextureView> viewB;
+    std::shared_ptr<GLTextureView3D> viewA;
+    std::shared_ptr<GLTextureView3D> viewB;
+    std::shared_ptr<GLTextureView3D> viewC;
+    std::shared_ptr<GLTextureView3D> viewD;
     
     std::vector<Renderable> sceneObjects;
     std::vector<LightObject> lights;
@@ -251,8 +294,9 @@ struct ExperimentalApp : public GLFWApp
     std::shared_ptr<GlShader> shadowCascadeShader;
     std::shared_ptr<GlShader> sceneCascadeShader;
     
-    float3 lightDir = {-1.4f, -0.37f, 0.63f};
+    float3 lightDir;
     bool showCascades = false;
+    bool polygonOffset = false;
     
     ExperimentalApp() : GLFWApp(1280, 720, "Shadow Mapping App")
     {
@@ -266,7 +310,7 @@ struct ExperimentalApp : public GLFWApp
         glViewport(0, 0, width, height);
         
         cameraController.set_camera(&camera);
-        camera.farClip = 80.f;
+        camera.farClip = 75.f;
         camera.look_at({0, 0, +50}, {0, 0, 0});
         
         // Debugging views
@@ -279,16 +323,21 @@ struct ExperimentalApp : public GLFWApp
         uiSurface.add_child( {{0.8335f, +10},{0, +10},{1.0000f, -10},{0.133f, +10}});
         uiSurface.layout();
         
-        objectShader = make_watched_shader(shaderMonitor, "assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl");
-        gaussianBlurShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/gaussian_blur_vert.glsl", "assets/shaders/shadow/gaussian_blur_frag.glsl");
         shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
+        
+        //objectShader = make_watched_shader(shaderMonitor, "assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl");
+        
+        gaussianBlurShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/gaussian_blur_vert.glsl", "assets/shaders/shadow/gaussian_blur_frag.glsl");
+       
         shadowCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/shadowcascade_vert.glsl", "assets/shaders/shadow/shadowcascade_frag.glsl", "assets/shaders/shadow/shadowcascade_geom.glsl");
         sceneCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/cascade_vert.glsl", "assets/shaders/shadow/cascade_frag.glsl");
         
         cascade.reset(new ShadowCascade(shadowCascadeShader.get(), gaussianBlurShader.get()));
         
-        viewA.reset(new GLTextureView(cascade->shadowArrayColor.get_gl_handle()));
-        viewB.reset(new GLTextureView(cascade->shadowArrayDepth.get_gl_handle()));
+        viewA.reset(new GLTextureView3D(cascade->shadowArrayColor.get_gl_handle()));
+        viewB.reset(new GLTextureView3D(cascade->shadowArrayColor.get_gl_handle()));
+        viewC.reset(new GLTextureView3D(cascade->shadowArrayColor.get_gl_handle()));
+        viewD.reset(new GLTextureView3D(cascade->shadowArrayColor.get_gl_handle()));
         
         lights.resize(2);
         lights[0].color = float3(249.f / 255.f, 228.f / 255.f, 157.f / 255.f);
@@ -296,16 +345,19 @@ struct ExperimentalApp : public GLFWApp
         lights[1].color = float3(255.f / 255.f, 242.f / 255.f, 254.f / 255.f);
         lights[1].pose.position = float3(-25, 15, 0);
         
-        auto hollowCube = load_geometry_from_ply("assets/models/geometry/CubeHollowOpen.ply");
+        auto hollowCube = load_geometry_from_ply("assets/models/geometry/CubeUniform.ply");
         for (auto & v : hollowCube.vertices) v *= 0.20f;
         sceneObjects.push_back(Renderable(hollowCube));
-        sceneObjects.back().pose.position = float3(0, 0, 0);
+        sceneObjects.back().pose.position = float3(0, -5, 0);
+        sceneObjects.back().scale = float3(8, 8.f, 0.0001f);
         sceneObjects.back().pose.orientation = make_rotation_quat_around_x(ANVIL_PI / 2);
         
-        auto torusKnot = load_geometry_from_ply("assets/models/geometry/TorusKnotUniform.ply");
-        for (auto & v : torusKnot.vertices) v *= 0.095f;
+        auto torusKnot = load_geometry_from_ply("assets/models/geometry/HexagonUniform.ply");
+        for (auto & v : torusKnot.vertices) v *= 0.05f;
         sceneObjects.push_back(Renderable(torusKnot));
         sceneObjects.back().pose.position = float3(0, 0, 0);
+        
+        lightDir = normalize(float3( -1.4f, -0.37f, 0.63f ));
         
         gl_check_error(__FILE__, __LINE__);
     }
@@ -340,14 +392,11 @@ struct ExperimentalApp : public GLFWApp
         int width, height;
         glfwGetWindowSize(window, &width, &height);
         glViewport(0, 0, width, height);
-     
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
-
+    
         const auto proj = camera.get_projection_matrix((float) width / (float) height);
         const float4x4 view = camera.get_view_matrix();
         const float4x4 viewProj = mul(proj, view);
+        // model view proj is proj * view * model
         
         // Recreate cascades from camera view
         cascade->update(camera, lightDir, ((float) width / (float) height));
@@ -358,17 +407,23 @@ struct ExperimentalApp : public GLFWApp
             auto & shadowFbo = cascade->shadowArrayFramebuffer;
             shadowFbo.bind_to_draw();
             
-            glEnable(GL_CULL_FACE);
+            //glEnable(GL_CULL_FACE); glCullFace(GL_BACK);
             glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_TRUE);
             
-            glEnable (GL_POLYGON_OFFSET_FILL);
+            glDisable(GL_BLEND);
+            
+            //if (polygonOffset) glEnable(GL_POLYGON_OFFSET_FILL);
+            
             glPolygonOffset(2.0f, 2.0f);
-            glViewport(0, 0, cascade->resolution, cascade->resolution);
+            //glViewport(0, 0, cascade->resolution, cascade->resolution);
+            
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             
             shadowCascadeShader->bind();
             
-            glClearColor(1.0f, 0.0f, 0.0f, 1.0f); // Debug red
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            //glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Debug red
+            //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             
             // Fixme: should batch
             for (const auto & model : sceneObjects)
@@ -385,49 +440,65 @@ struct ExperimentalApp : public GLFWApp
             // Restore state
             shadowFbo.unbind();
             glViewport(0, 0, width, height);
-            glDisable(GL_POLYGON_OFFSET_FILL);
+            //if (polygonOffset) glDisable(GL_POLYGON_OFFSET_FILL);
             
+            //glDisable(GL_CULL_FACE);
+            gl_check_error(__FILE__, __LINE__);
         }
         
         // Fixme
         //cascade->filter(float2(width, height));
         
+        glClearColor(1.0f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        
         {
-            glClearColor(0.0f, 0.0f, 1.0f, 1.0f); // Debug blue
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-         
+            
             for (const auto & model : sceneObjects)
             {
-                shadowCascadeShader->bind();
+                // Frustum intersection
                 
-                shadowCascadeShader->uniform("u_modelMatrix", model.get_model());
-                shadowCascadeShader->uniform("u_viewProjMatrix", viewProj);
-                shadowCascadeShader->uniform("u_normalMatrix", Identity4x4); // FIXME
+                float3 sceneLightDir = transform_vector(camera.get_view_matrix(), lightDir);
                 
-                shadowCascadeShader->uniform("u_cascadesNear", (int) cascade->nearPlanes.size(), cascade->nearPlanes);
-                shadowCascadeShader->uniform("u_cascadesFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
-                shadowCascadeShader->uniform("u_cascadesPlane", (int) cascade->splitPlanes.size(), cascade->splitPlanes);
-                shadowCascadeShader->uniform("u_cascadesMatrix", (int) cascade->shadowMatrices.size(), cascade->shadowMatrices);
+                sceneCascadeShader->bind();
                 
-                shadowCascadeShader->texture("s_shadowMap", 0, GL_TEXTURE_2D_ARRAY, cascade->shadowArrayColor); // attachment 0
+                sceneCascadeShader->uniform("u_modelMatrix", model.get_model());
+                sceneCascadeShader->uniform("u_modelMatrixIT", inv(transpose(model.get_model())));
+                sceneCascadeShader->uniform("u_viewProjMatrix", viewProj);
+                sceneCascadeShader->uniform("u_modelViewMatrix", view * model.get_model());
+                sceneCascadeShader->uniform("u_projMatrix", proj);
                 
-                shadowCascadeShader->uniform("u_lightDirection", lightDir);
-                shadowCascadeShader->uniform("u_expC", cascade->expCascade);
-                shadowCascadeShader->uniform("u_showCascades", 1.f);
+                
+                sceneCascadeShader->uniform("u_normalMatrix", get_rotation_submatrix(Identity4x4)); // FIXME
+                
+                sceneCascadeShader->uniform("u_cascadesNear", (int) cascade->nearPlanes.size(), cascade->nearPlanes);
+                sceneCascadeShader->uniform("u_cascadesFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
+                sceneCascadeShader->uniform("u_cascadesPlane", (int) cascade->splitPlanes.size(), cascade->splitPlanes);
+                sceneCascadeShader->uniform("u_cascadesMatrix", (int) cascade->shadowMatrices.size(), cascade->shadowMatrices);
+                
+                sceneCascadeShader->texture("s_shadowMap", 0, GL_TEXTURE_2D_ARRAY, cascade->shadowArrayColor); // attachment 0
+                
+                sceneCascadeShader->uniform("u_lightDirection", sceneLightDir);
+                sceneCascadeShader->uniform("u_expC", cascade->expCascade);
+                sceneCascadeShader->uniform("u_showCascades", (float) showCascades);
                 
                 model.draw();
                 
-                shadowCascadeShader->unbind();
+                sceneCascadeShader->unbind();
             }
+            
+            //glDisable(GL_DEPTH_TEST);
+            //glDepthMask(GL_FALSE);
         
         }
         
         //skydome.render(viewProj, camera.get_eye_point(), camera.farClip);
         
         {
-            ImGui::Text("Shadow Debug");
-            ImGui::Separator();
             ImGui::Checkbox("Show Cascades", &showCascades);
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::SliderFloat("Shadow Factor", &cascade->expCascade, 0.f, 1000.f);
+            ImGui::Checkbox("Polygon Offset", &polygonOffset);
             // dnable/disable polygon offset
             // dnable/disable filtering
             // enable/disable mapping
@@ -435,12 +506,17 @@ struct ExperimentalApp : public GLFWApp
             // float split lambda
             // camera near clip
             // camera far clip
+            // Light direction
         }
 
-        viewA->draw(uiSurface.children[0]->bounds, int2(width, height));
-        viewB->draw(uiSurface.children[1]->bounds, int2(width, height));
-        
         gl_check_error(__FILE__, __LINE__);
+        
+        viewA->draw(uiSurface.children[0]->bounds, int2(width, height), 0);
+        viewB->draw(uiSurface.children[1]->bounds, int2(width, height), 1);
+        viewC->draw(uiSurface.children[2]->bounds, int2(width, height), 2);
+        viewD->draw(uiSurface.children[3]->bounds, int2(width, height), 3);
+        
+        //gl_check_error(__FILE__, __LINE__);
         
         if (igm) igm->end_frame();
         
