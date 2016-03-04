@@ -52,7 +52,7 @@ out vec4 f_color;
 void main()
 {
     vec4 sample = texture(u_texture, vec3(v_texcoord, float(u_slice)));
-    f_color = vec4(sample.r, sample.r, sample.r, 1.0); // temp hack for debugging
+    f_color = sample; //vec4(sample.r, sample.r, sample.r, 1.0); // temp hack for debugging
 }
 )";
 

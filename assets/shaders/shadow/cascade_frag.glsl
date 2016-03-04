@@ -109,6 +109,7 @@ void main()
 
     // Shadow term (ESM)
     float shadows = 1.0;
+
     if (coord.z > 0.0 && coord.x > 0.0 && coord.y > 0 && coord.x <= 1 && coord.y <= 1) 
     {
         float near = get_cascade_near(cascadeWeights);
@@ -120,10 +121,10 @@ void main()
         shadows = clamp(occluder * receiver, 0.0, 1.0);
     }
 
-    vec3 baseColor = vec3(1.0);
-    float metallicTerm = 0.0;
+    vec3 baseColor = vec3(0.0, 0.40, 1.0);
+    float metallicTerm = 0.5;
     float roughnessTerm = 0.72;
-    float specularTerm = 1.0;
+    float specularTerm = 0.5;
     vec3 diffuseColor = baseColor - baseColor * metallicTerm;
     vec3 specularColor = mix(vec3(0.08 * specularTerm), baseColor, metallicTerm);
     
@@ -138,7 +139,7 @@ void main()
     vec3 color = saturate(vec3(0.05) + shadows * 3.0 * (diffuse + specular));
 
     // Gamma correct
-    color = pow(color, vec3(1.0f / 2.2f));
+    //color = pow(color, vec3(1.0f / 2.2f));
 
     f_color = vec4(color, 1.0);
     f_color.rgb = mix(f_color.rgb, f_color.rgb * get_cascade_weighted_color(cascadeWeights), u_showCascades);

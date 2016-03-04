@@ -65,10 +65,10 @@ inline std::array<float3, 4> make_near_clip_coords(GlCamera & cam, float aspectR
     
     auto coords = cam.make_frustum_coords(aspectRatio);
     
-    float frustumTop	= coords[0];
-    float frustumRight	= coords[1];
+    float frustumTop = coords[0];
+    float frustumRight = coords[1];
     float frustumBottom	= coords[2];
-    float frustumLeft	= coords[3];
+    float frustumLeft = coords[3];
     
     float3 topLeft = eye + (cam.nearClip * viewDirection) + (frustumTop * upDir) + (frustumLeft * leftDir);
     float3 topRight = eye + (cam.nearClip  * viewDirection) + (frustumTop * upDir) + (frustumRight * leftDir);
@@ -81,18 +81,18 @@ inline std::array<float3, 4> make_near_clip_coords(GlCamera & cam, float aspectR
 inline std::array<float3, 4> make_far_clip_coords(GlCamera & cam, float aspectRatio)
 {
     float3 viewDirection = normalize(cam.get_view_direction());
-    float ratio = cam.farClip / cam.nearClip;
     float3 eye = cam.get_eye_point();
+    float ratio = cam.farClip / cam.nearClip;
     
     auto leftDir = cam.pose.xdir();
     auto upDir = cam.pose.ydir();
     
     auto coords = cam.make_frustum_coords(aspectRatio);
     
-    float frustumTop	= coords[0];
-    float frustumRight	= coords[1];
+    float frustumTop = coords[0];
+    float frustumRight = coords[1];
     float frustumBottom	= coords[2];
-    float frustumLeft	= coords[3];
+    float frustumLeft = coords[3];
     
     float3 topLeft = eye + (cam.farClip * viewDirection) + (ratio * frustumTop * upDir) + (ratio * frustumLeft * leftDir);
     float3 topRight = eye + (cam.farClip * viewDirection) + (ratio * frustumTop * upDir) + (ratio * frustumRight * leftDir);
@@ -104,7 +104,6 @@ inline std::array<float3, 4> make_far_clip_coords(GlCamera & cam, float aspectRa
 
 struct ShadowCascade
 {
-    
     GlTexture3D shadowArrayColor;
     GlTexture3D shadowArrayDepth;
     GlFramebuffer shadowArrayFramebuffer;
@@ -251,7 +250,7 @@ struct ShadowCascade
     void create_framebuffers()
     {
         shadowArrayColor.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
-        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, nullptr);
         shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
         shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
         if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
@@ -535,11 +534,14 @@ struct ExperimentalApp : public GLFWApp
         {
             ImGui::Checkbox("Show Cascades", &showCascades);
             ImGui::Checkbox("Use Polygon Offset", &polygonOffset);
+            ImGui::Separator();
             ImGui::SliderFloat("Shadow Factor", &cascade->expCascade, 0.f, 1000.f);
             ImGui::DragFloat3("Light Direction", &lightDir[0], 0.1f, -1.0f, 1.0f);
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Separator();
             ImGui::SliderFloat("Near Clip", &camera.nearClip, 0.1f, 2.0f);
             ImGui::SliderFloat("Far Clip", &camera.farClip, 2.0f, 75.0f);
+            ImGui::Separator();
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             // enable/disable filtering
             // enable/disable mapping
             // float split lambda
