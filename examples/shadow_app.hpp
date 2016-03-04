@@ -389,6 +389,19 @@ struct ExperimentalApp : public GLFWApp
         //sceneObjects.back().scale = float3(8, 8.f, 0.0001f);
         //sceneObjects.back().pose.orientation = make_rotation_quat_around_x(ANVIL_PI / 2);
         
+		auto leePerryHeadModel = load_geometry_from_obj_no_texture("assets/models/leeperrysmith/lps.obj");
+		Geometry combined;
+		for (int i = 0; i < leePerryHeadModel.size(); ++i)
+		{
+			auto & m = leePerryHeadModel[i];
+			for (auto & v : m.vertices) v *= 25.f;
+			combined = concatenate_geometry(combined, m);
+		}
+		combined.compute_normals(false);
+
+		sceneObjects.push_back(Renderable(combined));
+
+		/*
         auto randomGeo = load_geometry_from_ply("assets/models/geometry/SphereUniform.ply");
         for (auto & v : randomGeo.vertices) v *= 0.0075f;
         
@@ -400,6 +413,7 @@ struct ExperimentalApp : public GLFWApp
             newObject.pose.position = float3(r(gen), 0, r(gen));
             sceneObjects.push_back(std::move(newObject));
         }
+		*/
 
         //sceneObjects.back().pose.position = float3(0, 0, 0);
         
@@ -517,7 +531,7 @@ struct ExperimentalApp : public GLFWApp
             sceneCascadeShader->uniform("u_expC", cascade->expCascade);
             sceneCascadeShader->uniform("u_showCascades", (float) showCascades);
             
-            sceneCascadeShader->uniform("u_viewProjMatrix", viewProj);
+            //sceneCascadeShader->uniform("u_viewProjMatrix", viewProj);
             sceneCascadeShader->uniform("u_projMatrix", proj);
             
              // Todo - frustum intersection
