@@ -19,14 +19,9 @@ out vec2 v_texcoord;
 void main() 
 {
     v_texcoord = inTexcoord;
-    //vec3 worldPosition = (u_modelMatrix * vec4(inPosition, 1.0)).xyz;
-    //v_position = vec4(inPosition, 1.0);
-    //v_normal = normalize((u_modelMatrixIT * vec4(inNormal,0)).xyz);
-    //v_vs_position = worldPosition.xyz;
-    //gl_Position = u_viewProjMatrix * vec4(worldPosition, 1.0); 
-    vec4 worldPosition = (u_modelViewMatrix * vec4(inPosition, 1.0));
-    v_position = worldPosition;
-    v_normal = normalize(u_normalMatrix * inNormal); //normalize((u_modelMatrixIT * vec4(inNormal,0)).xyz);
-    v_vs_position = worldPosition.xyz;
-    gl_Position = u_projMatrix * worldPosition; 
+    vec4 viewSpacePosition = (u_modelViewMatrix * vec4(inPosition, 1.0));
+    v_position = vec4(inPosition, 1.0);
+    v_normal = normalize(u_normalMatrix * inNormal);
+    v_vs_position = viewSpacePosition.xyz;
+    gl_Position = u_projMatrix * viewSpacePosition; 
 } 

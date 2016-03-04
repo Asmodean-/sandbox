@@ -60,10 +60,9 @@ inline std::array<float3, 4> make_near_clip_coords(GlCamera & cam, float aspectR
 {
     float3 viewDirection = normalize(cam.get_view_direction());
     float3 eye = cam.get_eye_point();
-    
-    auto m = cam.get_view_matrix();
-    auto leftDir = m.getRow(0).xyz(); // Camera side direction
-    auto upDir = m.getRow(1).xyz(); // Camera up direction
+
+    auto leftDir = cam.pose.xdir();
+    auto upDir = cam.pose.ydir();
     
     auto coords = cam.make_frustum_coords(aspectRatio);
     
@@ -86,9 +85,8 @@ inline std::array<float3, 4> make_far_clip_coords(GlCamera & cam, float aspectRa
     float ratio = cam.farClip / cam.nearClip;
     float3 eye = cam.get_eye_point();
     
-    auto m = cam.get_view_matrix();
-    auto leftDir = m.getRow(0).xyz(); // Camera side direction
-    auto upDir = m.getRow(1).xyz(); // Camera up direction
+    auto leftDir = cam.pose.xdir();
+    auto upDir = cam.pose.ydir();
     
     auto coords = cam.make_frustum_coords(aspectRatio);
     
@@ -351,8 +349,8 @@ struct ExperimentalApp : public GLFWApp
         glViewport(0, 0, width, height);
         
         cameraController.set_camera(&camera);
-        camera.farClip = 75.f;
-        camera.look_at({0, 0, +50}, {0, 0, 0});
+        camera.farClip = 45.f;
+        camera.look_at({0, 0, +15}, {0, 0, 0});
         
         // Debugging views
         uiSurface.bounds = {0, 0, (float) width, (float) height};
@@ -417,7 +415,7 @@ struct ExperimentalApp : public GLFWApp
 
         //sceneObjects.back().pose.position = float3(0, 0, 0);
         
-        lightDir = normalize(float3(0, -1, 0)); //float3( -1.4f, -0.37f, 0.63f ));
+        lightDir = normalize(float3(-0.33f, -0.33f, -1.0f)); //float3( -1.4f, -0.37f, 0.63f ));
         
         floor = Renderable(make_plane(112.f, 112.f, 256, 256));
         lightFrustum = Renderable(make_frustum());
@@ -456,14 +454,16 @@ struct ExperimentalApp : public GLFWApp
         int width, height;
         glfwGetWindowSize(window, &width, &height);
         glViewport(0, 0, width, height);
+        
+        float windowAspectRatio = (float) width / (float) height;
     
-        const auto proj = camera.get_projection_matrix((float) width / (float) height);
+        const auto proj = camera.get_projection_matrix(windowAspectRatio);
         const float4x4 view = camera.get_view_matrix();
         const float4x4 viewProj = mul(proj, view);
         // model view proj is proj * view * model
         
         // Recreate cascades from camera view
-        cascade->update(camera, lightDir, 1.f ); // aspect ratio?
+        cascade->update(camera, lightDir, windowAspectRatio); // aspect ratio?
         
         // Render shadowmaps
 
@@ -474,9 +474,10 @@ struct ExperimentalApp : public GLFWApp
             glEnable(GL_CULL_FACE);
             //glCullFace(GL_FRONT);
             
-            glEnable(GL_DEPTH_TEST); glDepthMask(GL_TRUE);
+            glEnable(GL_DEPTH_TEST);
+            //glDepthMask(GL_TRUE);
             
-            glDisable(GL_BLEND);
+            //glDisable(GL_BLEND);
             
             //if (polygonOffset) glEnable(GL_POLYGON_OFFSET_FILL);
             glPolygonOffset(2.0f, 2.0f);
