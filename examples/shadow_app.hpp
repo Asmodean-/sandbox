@@ -162,6 +162,8 @@ struct ShadowCascade
         float near = sceneCamera.nearClip;
         float far = sceneCamera.farClip;
         
+		const auto sceneCamPose = sceneCamera.get_pose();
+		const auto fwd2D = normalize(cross(float3(0, 1, 0), sceneCamPose.xdir()));
         for (size_t i = 0; i < 4; ++i)
         {
             // Find the split planes using GPU Gem 3. Chap 10 "Practical Split Scheme".
@@ -169,6 +171,19 @@ struct ShadowCascade
             float splitNear = i > 0 ? mix(near + (static_cast<float>(i) / 4.0f) * (far - near), near * pow(far / near, static_cast<float>(i) / 4.0f), splitLambda) : near;
             float splitFar = i < 4 - 1 ? mix(near + (static_cast<float>(i + 1) / 4.0f) * (far - near), near * pow(far / near, static_cast<float>(i + 1) / 4.0f), splitLambda) : far;
 
+			/*
+			// Compute the view matrix to look along the lighting direction at a point in front of the scene camera, halfway between the near and far cascade planes
+			float3 target = sceneCamPose.position + fwd2D * ((splitNear+splitFar)/2);
+			float3 eyePoint = target - lightDir * 100.0f;
+			const float3 viewUp = fwd2D; // Top and bottom of our clip space are the "far" and "near" cascade split planes;
+			float3 zDir = normalize(eyePoint - target);
+			float3 xDir = normalize(cross(viewUp, zDir));
+			float3 yDir = cross(zDir, xDir);
+			Pose viewPose = Pose(normalize(make_rotation_quat_from_rotation_matrix({ xDir, yDir, zDir })), eyePoint);
+			float4x4 viewMat = viewPose.inverse().matrix();
+			*/
+
+			// Compute the boundaries of the camera frustum as they intersect the cascade split planes
             GlCamera myCam = sceneCamera;
             myCam.nearClip = splitNear;
             myCam.farClip = splitFar;
@@ -176,36 +191,27 @@ struct ShadowCascade
             auto nc = make_near_clip_coords(myCam, aspectRatio);
             auto fc = make_far_clip_coords(myCam, aspectRatio);
             
-            float3 splitVertices[8] = { nc[0], nc[1], nc[2], nc[3], fc[0], fc[1], fc[2], fc[3]};
-            
-            // Split centroid for the view matrix
-            float3 splitCentroid = {0, 0, 0};
-            for(size_t i = 0; i < 8; ++i)
-            {
-                splitCentroid += splitVertices[i];
-            }
-            splitCentroid /= 8.0f;
-            
-            //std::cout << splitCentroid << std::endl;
-            
-            // Make the view matrix
-            float dist = max(splitFar - splitNear, distance(fc[0], fc[1]));
-            //auto pose = look_at_pose(splitCentroid.xyz() - lightDir * dist, splitCentroid.xyz());
-            //float4x4 viewMat = pose.matrix();
-            
-            //td::cout << pose.position << std::endl;
-            myCam.look_at(splitCentroid - lightDir * dist, splitCentroid);
-            auto viewMat = myCam.get_view_matrix();// make_view_matrix_from_pose(pose);
-            
-            //std::cout << viewMat << std::endl;
+            float3 splitVertices[8] = { nc[0], nc[1], nc[2], nc[3], fc[0], fc[1], fc[2], fc[3]};    
 
-            // Xform split vertices to the light view space
-            float3 splitVerticesLS[8];
-            for (size_t i = 0; i < 8; ++i)
-            {
-                splitVerticesLS[i] = transform_coord(viewMat, splitVertices[i]);
-            }
-            
+			// Split centroid for the view matrix
+			float3 splitCentroid = { 0, 0, 0 };
+			for (size_t i = 0; i < 8; ++i)
+			{
+				splitCentroid += splitVertices[i];
+			}
+			splitCentroid /= 8.0f;
+
+			float dist = max(splitFar - splitNear, distance(fc[0], fc[1]));
+			myCam.look_at(splitCentroid - lightDir * dist, splitCentroid);
+			auto viewMat = myCam.get_view_matrix();
+
+			// Xform split vertices to the light view space
+			float3 splitVerticesLS[8];
+			for (size_t i = 0; i < 8; ++i)
+			{
+				splitVerticesLS[i] = transform_coord(viewMat, splitVertices[i]);
+			}
+
             // Find the frustum bounding box in viewspace
             float3 min = splitVerticesLS[0];
             float3 max = splitVerticesLS[0];
@@ -215,18 +221,18 @@ struct ShadowCascade
                 max = avl::max(max, splitVerticesLS[i]);
             }
             
-            // Ortho projection matrix with the corners
-            float nearOffset = 10.0f;
-            float farOffset = 20.0f;
-            float4x4 projMat = make_orthographic_matrix(min.x, max.x, min.y, max.y, -max.z - nearOffset, -min.z + farOffset);
-            const float4x4 shadowBias = {{0.5f,0,0,0}, {0,0.5f,0,0}, {0,0,0.5f,0}, {0.5f,0.5f,0.5f,1}};
-            
-            viewMatrices.push_back(viewMat);
-            projMatrices.push_back(projMat);
-            shadowMatrices.push_back(shadowBias * projMat * viewMat);
-            splitPlanes.push_back(float2(splitNear, splitFar));
-            nearPlanes.push_back(-max.z - nearOffset);
-            farPlanes.push_back(-min.z + farOffset);
+			// Ortho projection matrix with the corners
+			float nearOffset = 10.0f;
+			float farOffset = 20.0f;
+			float4x4 projMat = make_orthographic_matrix(min.x, max.x, min.y, max.y, 0, 200); // make_orthographic_matrix(-50, +50, -50, +50, 0, 200);
+			const float4x4 shadowBias = { { 0.5f,0,0,0 },{ 0,0.5f,0,0 },{ 0,0,0.5f,0 },{ 0.5f,0.5f,0.5f,1 } };
+
+			viewMatrices.push_back(viewMat);
+			projMatrices.push_back(projMat);
+			shadowMatrices.push_back(shadowBias * projMat * viewMat);
+			splitPlanes.push_back(float2(splitNear, splitFar));
+			nearPlanes.push_back(-max.z - nearOffset);
+			farPlanes.push_back(-min.z + farOffset);
             
             //std::cout << float2(splitNear, splitFar) << std::endl;
             //std::cout << offsetMat * projMat * viewMat << std::endl;
@@ -277,7 +283,7 @@ struct ShadowCascade
     void create_framebuffers()
     {
         shadowArrayColor.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
-        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, nullptr);
+        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
         shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
         shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
         if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
@@ -397,7 +403,7 @@ struct ExperimentalApp : public GLFWApp
 
         //sceneObjects.back().pose.position = float3(0, 0, 0);
         
-        lightDir = normalize(float3( -1.4f, -0.37f, 0.63f ));
+        lightDir = normalize(float3(0, -1, 0)); //float3( -1.4f, -0.37f, 0.63f ));
         
         floor = Renderable(make_plane(112.f, 112.f, 256, 256));
         lightFrustum = Renderable(make_frustum());
@@ -474,6 +480,8 @@ struct ExperimentalApp : public GLFWApp
             // Fixme: should batch
             for (const auto & model : sceneObjects)
             {
+				auto modelMat = model.get_model();
+				shadowCascadeShader->uniform("u_modelMatrix", modelMat);
                 model.draw();
             }
 

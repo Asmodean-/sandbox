@@ -19,9 +19,6 @@
     <Filter Include="source\app">
       <UniqueIdentifier>{11a7ec82-191b-4beb-ba51-981dacc2f378}</UniqueIdentifier>
     </Filter>
-    <Filter Include="source\sky">
-      <UniqueIdentifier>{56b58ccd-80db-4de5-adf4-0638975646e8}</UniqueIdentifier>
-    </Filter>
     <Filter Include="source\minivision">
       <UniqueIdentifier>{acc63d00-0662-45cd-b463-f30156bab688}</UniqueIdentifier>
     </Filter>
@@ -85,9 +82,6 @@
       <Filter>examples</Filter>
     </ClInclude>
     <ClInclude Include="..\examples\empty_app.hpp">
-      <Filter>examples</Filter>
-    </ClInclude>
-    <ClInclude Include="..\examples\sandbox_app.hpp">
       <Filter>examples</Filter>
     </ClInclude>
     <ClInclude Include="..\examples\skydome_app.hpp">
@@ -180,12 +174,6 @@
     <ClInclude Include="..\util.hpp">
       <Filter>source\app</Filter>
     </ClInclude>
-    <ClInclude Include="..\procedural_sky\hosek.hpp">
-      <Filter>source\sky</Filter>
-    </ClInclude>
-    <ClInclude Include="..\procedural_sky\preetham.hpp">
-      <Filter>source\sky</Filter>
-    </ClInclude>
     <ClInclude Include="..\examples\terrain_app.hpp">
       <Filter>examples</Filter>
     </ClInclude>
@@ -197,9 +185,6 @@
     </ClInclude>
     <ClInclude Include="..\minivision\vision.hpp">
       <Filter>source\minivision</Filter>
-    </ClInclude>
-    <ClInclude Include="..\procedural_sky.hpp">
-      <Filter>source\sky</Filter>
     </ClInclude>
     <ClInclude Include="..\index.hpp">
       <Filter>source</Filter>
@@ -243,6 +228,12 @@
     <ClInclude Include="..\third_party\imgui\imgui_internal.h">
       <Filter>third_party\imgui</Filter>
     </ClInclude>
+    <ClInclude Include="..\examples\shadow_app.hpp">
+      <Filter>examples</Filter>
+    </ClInclude>
+    <ClInclude Include="..\procedural_sky.hpp">
+      <Filter>source\rendering</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\third_party\json.cpp">
@@ -274,12 +265,6 @@
     </ClCompile>
     <ClCompile Include="..\main.cpp">
       <Filter>examples</Filter>
-    </ClCompile>
-    <ClCompile Include="..\procedural_sky\hosek.cpp">
-      <Filter>source\sky</Filter>
-    </ClCompile>
-    <ClCompile Include="..\procedural_sky\preetham.cpp">
-      <Filter>source\sky</Filter>
     </ClCompile>
     <ClCompile Include="..\glfw_app.mm">
       <Filter>source\app</Filter>
