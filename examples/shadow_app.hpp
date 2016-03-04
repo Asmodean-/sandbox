@@ -5,14 +5,13 @@
 // https://github.com/NVIDIAGameWorks/OpenGLSamples/blob/master/samples/gl4-maxwell/CascadedShadowMapping/CascadedShadowMappingRenderer.cpp
 // https://blogs.aerys.in/jeanmarc-leroux/2015/01/21/exponential-cascaded-shadow-mapping-with-webgl/
 
-// [ ] Stencil Reflections + Shadows
+// [WIP] Cascaded Shadow Mapping (CSM)
+// [ ] Exponential Shadow Mapping (ESM)
+// [ ] Moment Shadow Mapping [MSM]
+// [ ] Percentage Closer Filtering (PCF) + poisson disk sampling (PCSS + PCF)
 // [ ] Shadow Volumes (face / edge)
 // [ ] Simple Shadow Mapping (SSM)
 // [ ] Variance Shadow Mapping (VSM) http://www.punkuser.net/vsm/vsm_paper.pdf
-// [ ] Exponential Shadow Mapping (ESM)
-// [ ] Cascaded Shadow Mapping (CSM)
-// [ ] Percentage Closer Filtering (PCF) + poisson disk sampling (PCSS + PCF)
-// [ ] Moment Shadow Mapping [MSM]
 
 constexpr const char colorVertexShader[] = R"(#version 330
 layout(location = 0) in vec3 vertex;
@@ -102,18 +101,6 @@ inline std::array<float3, 4> make_far_clip_coords(GlCamera & cam, float aspectRa
     
     return {topLeft, topRight, bottomLeft, bottomRight};
 }
-
-/*
-struct Frustum
-{
-    Frustum()
-    {
-        for (int i = 0; i < 6; ++i) planes.push_back(Plane());
-    }
-    
-    std::vector<Plane> planes;
-};
-*/
 
 struct ShadowCascade
 {
@@ -374,19 +361,17 @@ struct ExperimentalApp : public GLFWApp
 
 		sceneObjects.push_back(Renderable(combined));
 
-		/*
         auto randomGeo = load_geometry_from_ply("assets/models/geometry/SphereUniform.ply");
         for (auto & v : randomGeo.vertices) v *= 0.0075f;
         
-        auto r = std::uniform_real_distribution<float>(-32.0, 32.0);
+        auto r = std::uniform_real_distribution<float>(-24.0, 24.0);
         
-        for (int i = 0; i < 64; ++i)
+        for (int i = 0; i < 32; ++i)
         {
             auto newObject = Renderable(randomGeo);
             newObject.pose.position = float3(r(gen), 0, r(gen));
             sceneObjects.push_back(std::move(newObject));
         }
-		*/
 
         //sceneObjects.back().pose.position = float3(0, 0, 0);
         
@@ -447,12 +432,12 @@ struct ExperimentalApp : public GLFWApp
             shadowFbo.bind_to_draw();
             
             glEnable(GL_CULL_FACE);
-            //glCullFace(GL_FRONT);
+            glCullFace(GL_FRONT);
             
             glEnable(GL_DEPTH_TEST);
-            //glDepthMask(GL_TRUE);
+            glDepthMask(GL_TRUE);
             
-            //glDisable(GL_BLEND);
+            glDisable(GL_BLEND);
             
             //if (polygonOffset) glEnable(GL_POLYGON_OFFSET_FILL);
             glPolygonOffset(2.0f, 2.0f);
@@ -467,11 +452,9 @@ struct ExperimentalApp : public GLFWApp
             shadowCascadeShader->uniform("u_cascadeViewMatrixArray", (int) cascade->viewMatrices.size(), cascade->viewMatrices);
             shadowCascadeShader->uniform("u_cascadeProjMatrixArray", (int) cascade->projMatrices.size(), cascade->projMatrices);
             
-            // Fixme: should batch
             for (const auto & model : sceneObjects)
             {
-				auto modelMat = model.get_model();
-				shadowCascadeShader->uniform("u_modelMatrix", modelMat);
+				shadowCascadeShader->uniform("u_modelMatrix", model.get_model());
                 model.draw();
             }
 
@@ -482,7 +465,7 @@ struct ExperimentalApp : public GLFWApp
             glViewport(0, 0, width, height);
             //if (polygonOffset) glDisable(GL_POLYGON_OFFSET_FILL);
             
-            //glCullFace(GL_BACK);
+            glCullFace(GL_BACK);
             gl_check_error(__FILE__, __LINE__);
         }
         
@@ -510,7 +493,7 @@ struct ExperimentalApp : public GLFWApp
             //sceneCascadeShader->uniform("u_viewProjMatrix", viewProj);
             sceneCascadeShader->uniform("u_projMatrix", proj);
             
-             // Todo - frustum intersection
+             // Todo - frustum culling
             for (const auto & model : sceneObjects)
             {
                 sceneCascadeShader->uniform("u_modelMatrix", model.get_model());
@@ -537,14 +520,12 @@ struct ExperimentalApp : public GLFWApp
 
         {
             colorShader->bind();
-            
             auto pose = look_at_pose(lightFrustum.pose.position, lightDir);
             auto model = make_view_matrix_from_pose(pose);
             colorShader->uniform("u_modelMatrix", model);
             colorShader->uniform("u_modelMatrixIT", inv(transpose(model)));
             colorShader->uniform("u_viewProj", viewProj);
             colorShader->uniform("u_color", float3(1, 0, 0));
-            
             lightFrustum.draw();
             colorShader->unbind();
         }
