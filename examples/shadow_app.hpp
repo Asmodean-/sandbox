@@ -159,27 +159,13 @@ struct ShadowCascade
         
         float near = sceneCamera.nearClip;
         float far = sceneCamera.farClip;
-        
-		const auto sceneCamPose = sceneCamera.get_pose();
-		const auto fwd2D = normalize(cross(float3(0, 1, 0), sceneCamPose.xdir()));
+
         for (size_t i = 0; i < 4; ++i)
         {
             // Find the split planes using GPU Gem 3. Chap 10 "Practical Split Scheme".
             // http://http.developer.nvidia.com/GPUGems3/gpugems3_ch10.html
             float splitNear = i > 0 ? mix(near + (static_cast<float>(i) / 4.0f) * (far - near), near * pow(far / near, static_cast<float>(i) / 4.0f), splitLambda) : near;
             float splitFar = i < 4 - 1 ? mix(near + (static_cast<float>(i + 1) / 4.0f) * (far - near), near * pow(far / near, static_cast<float>(i + 1) / 4.0f), splitLambda) : far;
-
-			/*
-			// Compute the view matrix to look along the lighting direction at a point in front of the scene camera, halfway between the near and far cascade planes
-			float3 target = sceneCamPose.position + fwd2D * ((splitNear+splitFar)/2);
-			float3 eyePoint = target - lightDir * 100.0f;
-			const float3 viewUp = fwd2D; // Top and bottom of our clip space are the "far" and "near" cascade split planes;
-			float3 zDir = normalize(eyePoint - target);
-			float3 xDir = normalize(cross(viewUp, zDir));
-			float3 yDir = cross(zDir, xDir);
-			Pose viewPose = Pose(normalize(make_rotation_quat_from_rotation_matrix({ xDir, yDir, zDir })), eyePoint);
-			float4x4 viewMat = viewPose.inverse().matrix();
-			*/
 
 			// Compute the boundaries of the camera frustum as they intersect the cascade split planes
             GlCamera myCam = sceneCamera;
@@ -231,9 +217,6 @@ struct ShadowCascade
 			splitPlanes.push_back(float2(splitNear, splitFar));
 			nearPlanes.push_back(-max.z - nearOffset);
 			farPlanes.push_back(-min.z + farOffset);
-            
-            //std::cout << float2(splitNear, splitFar) << std::endl;
-            //std::cout << offsetMat * projMat * viewMat << std::endl;
         }
         
     }
@@ -285,15 +268,11 @@ struct ShadowCascade
         shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
         shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
         if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
-        
-        gl_check_error(__FILE__, __LINE__);
-        
+
         blurTexAttach.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
         blurFramebuffer.attach(GL_COLOR_ATTACHMENT0, blurTexAttach);
         blurFramebuffer.attach(GL_COLOR_ATTACHMENT1, shadowArrayColor); // note this attach point
         if (!blurFramebuffer.check_complete()) throw std::runtime_error("incomplete blur framebuffer");
-        
-        gl_check_error(__FILE__, __LINE__);
     };
     
 };
@@ -365,11 +344,7 @@ struct ExperimentalApp : public GLFWApp
         colorShader.reset(new GlShader(colorVertexShader, colorFragmentShader));
         
         shadowDebugShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/debug_vert.glsl", "assets/shaders/shadow/debug_frag.glsl");
-        
-        //objectShader = make_watched_shader(shaderMonitor, "assets/shaders/simple_vert.glsl", "assets/shaders/simple_frag.glsl");
-        
         gaussianBlurShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/gaussian_blur_vert.glsl", "assets/shaders/shadow/gaussian_blur_frag.glsl");
-       
         shadowCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/shadowcascade_vert.glsl", "assets/shaders/shadow/shadowcascade_frag.glsl", "assets/shaders/shadow/shadowcascade_geom.glsl");
         sceneCascadeShader = make_watched_shader(shaderMonitor, "assets/shaders/shadow/cascade_vert.glsl", "assets/shaders/shadow/cascade_frag.glsl");
         
@@ -418,7 +393,9 @@ struct ExperimentalApp : public GLFWApp
         lightDir = normalize(float3(-0.33f, -0.33f, -1.0f)); //float3( -1.4f, -0.37f, 0.63f ));
         
         floor = Renderable(make_plane(112.f, 112.f, 256, 256));
+        
         lightFrustum = Renderable(make_frustum());
+        lightFrustum.pose.position = {0, 10, 0};
         lightFrustum.set_non_indexed(GL_LINES);
         
         gl_check_error(__FILE__, __LINE__);
@@ -460,13 +437,11 @@ struct ExperimentalApp : public GLFWApp
         const auto proj = camera.get_projection_matrix(windowAspectRatio);
         const float4x4 view = camera.get_view_matrix();
         const float4x4 viewProj = mul(proj, view);
-        // model view proj is proj * view * model
         
         // Recreate cascades from camera view
         cascade->update(camera, lightDir, windowAspectRatio); // aspect ratio?
         
         // Render shadowmaps
-
         {
             auto & shadowFbo = cascade->shadowArrayFramebuffer;
             shadowFbo.bind_to_draw();
@@ -563,7 +538,7 @@ struct ExperimentalApp : public GLFWApp
         {
             colorShader->bind();
             
-            auto pose = look_at_pose({0, 0, 0}, lightDir);
+            auto pose = look_at_pose(lightFrustum.pose.position, lightDir);
             auto model = make_view_matrix_from_pose(pose);
             colorShader->uniform("u_modelMatrix", model);
             colorShader->uniform("u_modelMatrixIT", inv(transpose(model)));
@@ -582,22 +557,19 @@ struct ExperimentalApp : public GLFWApp
             ImGui::SliderFloat("Shadow Factor", &cascade->expCascade, 0.f, 1000.f);
             ImGui::DragFloat3("Light Direction", &lightDir[0], 0.1f, -1.0f, 1.0f);
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-            // dnable/disable filtering
+            ImGui::SliderFloat("Near Clip", &camera.nearClip, 0.1f, 2.0f);
+            ImGui::SliderFloat("Far Clip", &camera.farClip, 2.0f, 75.0f);
+            // enable/disable filtering
             // enable/disable mapping
             // float split lambda
-            // camera near clip
-            // camera far clip
-            // Light direction
         }
-
-        gl_check_error(__FILE__, __LINE__);
         
         viewA->draw(uiSurface.children[0]->bounds, int2(width, height), 0);
         viewB->draw(uiSurface.children[1]->bounds, int2(width, height), 1);
         viewC->draw(uiSurface.children[2]->bounds, int2(width, height), 2);
         viewD->draw(uiSurface.children[3]->bounds, int2(width, height), 3);
         
-        //gl_check_error(__FILE__, __LINE__);
+        gl_check_error(__FILE__, __LINE__);
         
         if (igm) igm->end_frame();
         
