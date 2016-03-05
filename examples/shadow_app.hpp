@@ -250,7 +250,7 @@ struct ShadowCascade
     void create_framebuffers()
     {
         shadowArrayColor.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_R16F, GL_RGB, GL_FLOAT, nullptr);
-        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, nullptr);
+        shadowArrayDepth.load_data(resolution, resolution, 4, GL_TEXTURE_2D_ARRAY, GL_DEPTH_COMPONENT32F, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
         shadowArrayFramebuffer.attach(GL_COLOR_ATTACHMENT0, shadowArrayColor);
         shadowArrayFramebuffer.attach(GL_DEPTH_ATTACHMENT, shadowArrayDepth);
         if (!shadowArrayFramebuffer.check_complete()) throw std::runtime_error("incomplete shadow framebuffer");
@@ -450,6 +450,7 @@ struct ExperimentalApp : public GLFWApp
             shadowCascadeShader->uniform("u_cascadeFar", (int) cascade->farPlanes.size(), cascade->farPlanes);
             shadowCascadeShader->uniform("u_cascadeViewMatrixArray", (int) cascade->viewMatrices.size(), cascade->viewMatrices);
             shadowCascadeShader->uniform("u_cascadeProjMatrixArray", (int) cascade->projMatrices.size(), cascade->projMatrices);
+            shadowCascadeShader->uniform("u_expC", cascade->expCascade);
             
             for (const auto & model : sceneObjects)
             {

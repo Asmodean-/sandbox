@@ -23,7 +23,10 @@ out vec4 f_color;
 
 vec4 get_cascade_weights(float depth, vec4 splitNear, vec4 splitFar)
 {
-    return step(splitNear, vec4(depth)) * step(depth, splitFar); // near * far
+    vec4 near = step(splitNear, vec4(depth));
+    vec4 far = step(depth, splitFar);
+ 
+    return near * far;
 }
 
 mat4 get_cascade_viewproj(vec4 weights, mat4 viewProj[4])
@@ -139,7 +142,7 @@ void main()
     vec3 color = saturate(vec3(0.05) + shadows * 3.0 * (diffuse + specular));
 
     // Gamma correct
-    //color = pow(color, vec3(1.0f / 2.2f));
+    color = pow(color, vec3(1.0f / 2.2f));
 
     f_color = vec4(color, 1.0);
     f_color.rgb = mix(f_color.rgb, f_color.rgb * get_cascade_weighted_color(cascadeWeights), u_showCascades);
